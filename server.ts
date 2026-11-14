@@ -5,6 +5,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
@@ -369,6 +370,7 @@ function reconcileAndVerifyAnalysis(
         hasInterior = true;
       }
     }
+    const normRoomBoxes = normalizeBoxes2D(r?.boxes2D);
     return {
       name: String(r?.name || `Space ${idx + 1}`),
       labelInDrawing: String(r?.labelInDrawing || r?.name || ''),
@@ -379,23 +381,30 @@ function reconcileAndVerifyAnalysis(
       dimensionsText: String(r?.dimensionsText || 'Not printed'),
       dimensionsEvidence: String(r?.dimensionsEvidence || 'Unknown'),
       notes: String(r?.notes || ''),
-      ...(Array.isArray(r?.boxes2D) ? { boxes2D: r.boxes2D } : {}),
+      ...(normRoomBoxes.length > 0 ? { boxes2D: normRoomBoxes } : {}),
     };
   });
 
-  const detectedObjects = rawObjects.map((o, idx) => ({
-    category: String(o?.category || 'Other'),
-    name: String(o?.name || `Object ${idx + 1}`),
-    count:
+  const detectedObjects = rawObjects.map((o, idx) => {
+    const count =
       typeof o?.count === 'number' && Number.isFinite(o.count)
         ? Math.max(0, Math.round(o.count))
-        : 0,
-    unit: String(o?.unit || 'count'),
-    evidence: String(o?.evidence || 'Estimated'),
-    confidence: String(o?.confidence || 'Medium'),
-    locationsOrNotes: String(o?.locationsOrNotes || ''),
-    ...(Array.isArray(o?.boxes2D) ? { boxes2D: o.boxes2D } : {}),
-  }));
+        : 0;
+    const normObjBoxes = normalizeBoxes2D(
+      o?.boxes2D,
+      count > 0 ? count : undefined,
+    );
+    return {
+      category: String(o?.category || 'Other'),
+      name: String(o?.name || `Object ${idx + 1}`),
+      count,
+      unit: String(o?.unit || 'count'),
+      evidence: String(o?.evidence || 'Estimated'),
+      confidence: String(o?.confidence || 'Medium'),
+      locationsOrNotes: String(o?.locationsOrNotes || ''),
+      ...(normObjBoxes.length > 0 ? { boxes2D: normObjBoxes } : {}),
+    };
+  });
 
   if (dims.printedLivingAreaSqM !== null) {
     dims.printedLivingAreaSqM = round2(dims.printedLivingAreaSqM);
@@ -486,6 +495,871 @@ function reconcileAndVerifyAnalysis(
         )
       : [],
   };
+}
+
+interface NormalizedBox2D {
+  ymin: number;
+  xmin: number;
+  ymax: number;
+  xmax: number;
+  label?: string;
+}
+
+function normalizeBoxes2D(
+  rawList: unknown,
+  expectedCount?: number,
+  allowFullCanvas = false,
+): NormalizedBox2D[] {
+  if (!Array.isArray(rawList)) return [];
+  const candidates: NormalizedBox2D[] = [];
+
+  for (const item of rawList) {
+    if (!item || typeof item !== 'object') continue;
+    const rec = item as Record<string, unknown>;
+    let y1 = NaN;
+    let x1 = NaN;
+    let y2 = NaN;
+    let x2 = NaN;
+
+    const arr = Array.isArray(rec.box_2d)
+      ? rec.box_2d
+      : Array.isArray(rec.box2d)
+        ? rec.box2d
+        : Array.isArray(item)
+          ? item
+          : null;
+
+    if (arr && arr.length >= 4) {
+      y1 = Number(arr[0]);
+      x1 = Number(arr[1]);
+      y2 = Number(arr[2]);
+      x2 = Number(arr[3]);
+    } else {
+      y1 = Number(rec.ymin);
+      x1 = Number(rec.xmin);
+      y2 = Number(rec.ymax);
+      x2 = Number(rec.xmax);
+    }
+
+    if (
+      !Number.isFinite(y1) ||
+      !Number.isFinite(x1) ||
+      !Number.isFinite(y2) ||
+      !Number.isFinite(x2)
+    ) {
+      continue;
+    }
+
+    // Handle [0..1] normalized floats if returned instead of [0..1000]
+    const maxAbs = Math.max(Math.abs(y1), Math.abs(x1), Math.abs(y2), Math.abs(x2));
+    if (maxAbs > 0 && maxAbs <= 1.05) {
+      y1 *= 1000;
+      x1 *= 1000;
+      y2 *= 1000;
+      x2 *= 1000;
+    }
+
+    let ymin = Math.round(Math.max(0, Math.min(1000, Math.min(y1, y2))));
+    let ymax = Math.round(Math.max(0, Math.min(1000, Math.max(y1, y2))));
+    let xmin = Math.round(Math.max(0, Math.min(1000, Math.min(x1, x2))));
+    let xmax = Math.round(Math.max(0, Math.min(1000, Math.max(x1, x2))));
+
+    // Ensure minimum visible span for thin wall openings or small icons without puffing onto walls
+    if (ymax - ymin < 10) {
+      const cy = Math.round((ymin + ymax) / 2);
+      ymin = Math.max(0, cy - 5);
+      ymax = Math.min(1000, cy + 5);
+    }
+    if (xmax - xmin < 10) {
+      const cx = Math.round((xmin + xmax) / 2);
+      xmin = Math.max(0, cx - 5);
+      xmax = Math.min(1000, cx + 5);
+    }
+
+    const w = xmax - xmin;
+    const h = ymax - ymin;
+    if (w < 6 || h < 6) continue;
+    // Reject accidental whole-sheet bounding boxes
+    if (!allowFullCanvas && w > 965 && h > 965) continue;
+
+    const label =
+      typeof rec.label === 'string' && rec.label.trim()
+        ? rec.label.trim()
+        : undefined;
+
+    // Deduplicate only near-identical boxes (IoU > 0.92) so adjacent chairs/doors are preserved
+    const isDuplicate = candidates.some((existing) => {
+      const ix1 = Math.max(existing.xmin, xmin);
+      const iy1 = Math.max(existing.ymin, ymin);
+      const ix2 = Math.min(existing.xmax, xmax);
+      const iy2 = Math.min(existing.ymax, ymax);
+      if (ix2 <= ix1 || iy2 <= iy1) return false;
+      const inter = (ix2 - ix1) * (iy2 - iy1);
+      const areaA = (existing.xmax - existing.xmin) * (existing.ymax - existing.ymin);
+      const areaB = w * h;
+      const iou = inter / Math.max(1, areaA + areaB - inter);
+      return iou > 0.92;
+    });
+
+    if (!isDuplicate) {
+      candidates.push({
+        ymin,
+        xmin,
+        ymax,
+        xmax,
+        ...(label ? { label } : {}),
+      });
+    }
+  }
+
+  if (expectedCount && expectedCount > 0 && candidates.length > expectedCount) {
+    return candidates.slice(0, expectedCount);
+  }
+  return candidates;
+}
+
+const BOX_2D_ITEMS_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    box_2d: {
+      type: Type.ARRAY,
+      items: { type: Type.INTEGER },
+      description:
+        'Tight 4-integer bounding box [ymin, xmin, ymax, xmax] normalized to 0..1000 hugging ONLY the symbol or room.',
+    },
+    label: {
+      type: Type.STRING,
+      description: 'Short label for this specific symbol or room instance.',
+    },
+  },
+  required: ['box_2d'],
+  propertyOrdering: ['box_2d', 'label'],
+};
+
+const DETECT_2D_INDEX_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    elements: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          box_2d: {
+            type: Type.ARRAY,
+            items: { type: Type.INTEGER },
+            description:
+              'Tight 4-integer bounding box [ymin, xmin, ymax, xmax] normalized to 0..1000.',
+          },
+          category: {
+            type: Type.STRING,
+            description:
+              'One of: "Door", "Window", "Furniture", "Plumbing", "Appliance", "Lighting", "Space".',
+          },
+          label: {
+            type: Type.STRING,
+            description:
+              'Specific name, e.g. "interior door", "entrance door", "sliding door", "window", "bed", "sofa", "dining table", "chair", "wardrobe", "toilet", "sink", "shower", "bathtub", "stove", "lamp", or exact room name.',
+          },
+        },
+        required: ['box_2d', 'category', 'label'],
+        propertyOrdering: ['box_2d', 'category', 'label'],
+      },
+    },
+  },
+  required: ['elements'],
+};
+
+interface SpatialTileInput {
+  id: string;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  mimeType: string;
+  dataBase64: string;
+}
+
+interface SpatialIndex2DItem {
+  ymin: number;
+  xmin: number;
+  ymax: number;
+  xmax: number;
+  category: string;
+  label: string;
+}
+
+interface RawCandidateBox extends SpatialIndex2DItem {
+  fromTile: boolean;
+}
+
+const MAX_PARALLEL_LABEL_REQUESTS = 50;
+
+const spatialIndexCache = new Map<string, SpatialIndex2DItem[]>();
+const spatialIndexInFlight = new Map<string, Promise<SpatialIndex2DItem[]>>();
+const locate2DCache = new Map<string, NormalizedBox2D[]>();
+
+function hashPayloadKey(...parts: Array<string | number | undefined>): string {
+  const h = crypto.createHash('sha1');
+  for (const p of parts) {
+    h.update(String(p ?? ''));
+    h.update('|');
+  }
+  return h.digest('hex');
+}
+
+interface ResolvedRoboticsEndpoint {
+  client: GoogleGenAI;
+  model: string;
+  apiVersion?: string;
+}
+
+let cachedRoboticsEndpoint: ResolvedRoboticsEndpoint | null = null;
+let inflightRoboticsProbe: Promise<ResolvedRoboticsEndpoint> | null = null;
+
+async function resolveRoboticsLabeler(): Promise<ResolvedRoboticsEndpoint> {
+  if (cachedRoboticsEndpoint) return cachedRoboticsEndpoint;
+  if (inflightRoboticsProbe) return inflightRoboticsProbe;
+
+  inflightRoboticsProbe = (async (): Promise<ResolvedRoboticsEndpoint> => {
+    const candidates: Array<{ model: string; apiVersion?: string }> = [
+      { model: 'gemini-robotics-er-2-preview', apiVersion: 'v1beta' },
+      { model: 'gemini-robotics-er-2-preview', apiVersion: undefined },
+      { model: 'gemini-robotics-er-2.0-preview', apiVersion: 'v1beta' },
+      { model: 'gemini-robotics-er-1.5-preview', apiVersion: 'v1beta' },
+      { model: 'gemini-4-carbon', apiVersion: undefined },
+    ];
+
+    for (const cand of candidates) {
+      try {
+        const client = getAiClient(cand.apiVersion);
+        await client.models.generateContent({
+          model: cand.model,
+          contents: 'Return {"ok":true}',
+          config: {
+            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+            responseMimeType: 'application/json',
+          },
+        });
+        const resolved: ResolvedRoboticsEndpoint = {
+          client,
+          model: cand.model,
+          apiVersion: cand.apiVersion,
+        };
+        cachedRoboticsEndpoint = resolved;
+        console.log(
+          `[2D Labeling] Resolved spatial reasoning model: ${cand.model} (${cand.apiVersion ?? 'default'})`,
+        );
+        return resolved;
+      } catch {
+        // Try next candidate
+      }
+    }
+
+    const fallback: ResolvedRoboticsEndpoint = {
+      client: getAiClient(),
+      model: 'gemini-4-hydrogen',
+    };
+    cachedRoboticsEndpoint = fallback;
+    return fallback;
+  })();
+
+  try {
+    return await inflightRoboticsProbe;
+  } finally {
+    inflightRoboticsProbe = null;
+  }
+}
+
+async function runWithConcurrencyLimit<T>(
+  tasks: Array<() => Promise<T>>,
+  maxConcurrency = MAX_PARALLEL_LABEL_REQUESTS,
+): Promise<T[]> {
+  if (tasks.length === 0) return [];
+  const results = new Array<T>(tasks.length);
+  let nextIdx = 0;
+  const workerCount = Math.min(maxConcurrency, tasks.length);
+
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (true) {
+      const idx = nextIdx++;
+      if (idx >= tasks.length) break;
+      results[idx] = await tasks[idx]();
+    }
+  });
+
+  await Promise.all(workers);
+  return results;
+}
+
+async function callRoboticsWithRetry<T>(fn: () => Promise<T>): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      if (attempt === 0 && /(429|503|rate|quota|overloaded|UNAVAILABLE)/i.test(msg)) {
+        const backoffMs = 280 + Math.floor(Math.random() * 380);
+        await new Promise((r) => setTimeout(r, backoffMs));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
+
+interface SpecialistSpec {
+  id: string;
+  category:
+    | 'Door'
+    | 'Window'
+    | 'Furniture'
+    | 'Plumbing'
+    | 'Appliance'
+    | 'Lighting'
+    | 'Space';
+  tileAllowed: boolean;
+  prompt: string;
+}
+
+const SPECIALIST_SPECS: SpecialistSpec[] = [
+  {
+    id: 'doors',
+    category: 'Door',
+    tileAllowed: true,
+    prompt:
+      'Detect ONLY true Door symbols in this blueprint view: hinged doors (straight thin door leaf + quarter-circle swing arc bridging a wall opening), double swing doors (two meeting leaves/arcs as 1 assembly), sliding/pocket doors, or bi-fold closet doors. Stop box_2d strictly at hinge jamb and latch jamb—do NOT include solid wall segments. STRICTLY EXCLUDE curved corner showers inside bathrooms, open wall gaps/archways without a door leaf, and stair arrows. Emit category "Door" and label ("interior door", "entrance door", "sliding door", "balcony door", or "double door"). Return {"elements":[]} if none are visible.',
+  },
+  {
+    id: 'windows',
+    category: 'Window',
+    tileAllowed: true,
+    prompt:
+      'Detect ONLY Window glazing symbols embedded inside exterior or partition walls in this blueprint view (2-to-4 thin parallel glazing lines spanning jamb-to-jamb inside the wall thickness). Tightly hug ONLY the narrow glazing band, excluding solid wall segments between windows, wardrobes/cabinets, radiators, balcony railings, and hinged doors with swing arcs. Emit category "Window" and label "window". Return {"elements":[]} if none are visible.',
+  },
+  {
+    id: 'furniture-seating-tables',
+    category: 'Furniture',
+    tileAllowed: true,
+    prompt:
+      'Detect ONLY Seating & Table furniture symbols in this blueprint view: each individual "chair", "dining chair", "armchair", "stool", "sofa", "dining table", "coffee table", "desk", or "kitchen island". CRITICAL: Emit one tight separate box for EACH individual chair (even chairs partially tucked around a dining table) and one separate box for the tabletop — NEVER merge a table and chairs into one combined box. Emit category "Furniture". Return {"elements":[]} if none are visible.',
+  },
+  {
+    id: 'furniture-beds-storage',
+    category: 'Furniture',
+    tileAllowed: true,
+    prompt:
+      'Detect ONLY Bed & Storage furniture symbols in this blueprint view: each individual "bed", "double bed", "single bed", "crib", "nightstand", "wardrobe", "closet", "cabinet", "dresser", or "bookshelf" (including 60 cm storage modules with X cross, diagonal rod line, or SK/VH/KAAPPI/Schrank tags). Keep nightstands separate from beds, and NEVER mislabel wooden sauna benches (room S) or stair treads as furniture. Emit category "Furniture". Return {"elements":[]} if none are visible.',
+  },
+  {
+    id: 'plumbing',
+    category: 'Plumbing',
+    tileAllowed: true,
+    prompt:
+      'Detect ONLY Sanitary & Plumbing fixture symbols in this blueprint view: each individual "toilet" (compact wall cistern + oval bowl, NOT the whole WC room), "sink" (basin bowl with drain/faucet only, NOT the bare kitchen counter), "shower" (square/corner tray with drain diagonals/circle), "bathtub" (oval tub in rim), or "bidet". Tightly hug ONLY each fixture contour. Emit category "Plumbing". Return {"elements":[]} if none are visible.',
+  },
+  {
+    id: 'appliances',
+    category: 'Appliance',
+    tileAllowed: true,
+    prompt:
+      'Detect ONLY Kitchen & Laundry Appliance symbols in this blueprint view: each individual "stove" (60x60 cm square with 4 circular burner rings or tagged L/Liesi/Herd), "oven", "refrigerator" (tagged JK/PK/K/F), "dishwasher" (tagged APK/GS), "washing machine" (tagged PPK/PK/KR/WM or drum circle in bath/utility), or "dryer". Tightly hug ONLY each appliance module. Emit category "Appliance". Return {"elements":[]} if none are visible.',
+  },
+  {
+    id: 'lighting',
+    category: 'Lighting',
+    tileAllowed: true,
+    prompt:
+      'Detect ONLY true Lighting / Luminaire symbols in this blueprint view: each individual "lamp", "ceiling light", "pendant light", "sconce", or "chandelier". STRICTLY EXCLUDE wall switches (small circle on wall with angled tick), electrical wall outlets, bathroom floor drains, and 4-ring stove burners. Emit category "Lighting". Return {"elements":[]} if none are visible.',
+  },
+  {
+    id: 'spaces',
+    category: 'Space',
+    tileAllowed: false,
+    prompt:
+      'Detect every individual Room / Space interior boundary in this floor plan. Hug the INNER wall faces of each room. IMPORTANT: If any room, hallway (ET/Korridor), or open living-kitchen (OH+KT) is L-shaped, T-shaped, or U-shaped, decompose it into 2 or 3 tight non-overlapping interior rectangles with the SAME exact room label so adjacent rooms tucked into corners are NEVER overlapped. Emit category "Space".',
+  },
+];
+
+function inferSubFamilyKey(category: string, label: string): string {
+  const low = label.toLowerCase();
+  if (category === 'Space') return `space:${low}`;
+  if (category === 'Door' || low.includes('door')) return 'door';
+  if (category === 'Window' || low.includes('window')) return 'window';
+  if (low.includes('chair') || low.includes('stool') || low.includes('armchair')) {
+    return 'chair';
+  }
+  if (low.includes('sofa') || low.includes('couch') || low.includes('sectional')) {
+    return 'sofa';
+  }
+  if (low.includes('table') || low.includes('desk') || low.includes('island')) {
+    return 'table';
+  }
+  if (low.includes('bed') || low.includes('crib')) return 'bed';
+  if (low.includes('nightstand')) return 'nightstand';
+  if (
+    low.includes('wardrobe') ||
+    low.includes('closet') ||
+    low.includes('cabinet') ||
+    low.includes('dresser') ||
+    low.includes('shelf')
+  ) {
+    return 'storage';
+  }
+  if (low.includes('toilet') || low.includes('wc')) return 'toilet';
+  if (low.includes('sink') || low.includes('basin')) return 'sink';
+  if (low.includes('shower')) return 'shower';
+  if (low.includes('bath') || low.includes('tub')) return 'bathtub';
+  if (low.includes('stove') || low.includes('cooktop') || low.includes('oven')) {
+    return 'stove';
+  }
+  if (low.includes('fridge') || low.includes('refrigerator')) return 'fridge';
+  if (low.includes('wash') || low.includes('dryer')) return 'laundry';
+  if (category === 'Lighting') return 'lighting';
+  return `${category.toLowerCase()}:${low}`;
+}
+
+function fuseParallelSpatialDetections(
+  candidates: RawCandidateBox[],
+): SpatialIndex2DItem[] {
+  // Filter invalid specks & oversized non-room boxes first
+  const valid = candidates.filter((cand) => {
+    const w = cand.xmax - cand.xmin;
+    const h = cand.ymax - cand.ymin;
+    if (w < 6 || h < 6) return false;
+    if (cand.category !== 'Space' && w * h > 340000) return false;
+    return true;
+  });
+
+  // Sort high-DPI tile predictions ahead of full-sheet predictions, and medium/tight symbols ahead of loose boxes
+  const sorted = [...valid].sort((a, b) => {
+    if (a.fromTile !== b.fromTile) return a.fromTile ? -1 : 1;
+    const areaA = (a.xmax - a.xmin) * (a.ymax - a.ymin);
+    const areaB = (b.xmax - b.xmin) * (b.ymax - b.ymin);
+    return areaA - areaB;
+  });
+
+  interface BoxCluster {
+    category: string;
+    fam: string;
+    label: string;
+    members: Array<{ box: RawCandidateBox; weight: number }>;
+    ymin: number;
+    xmin: number;
+    ymax: number;
+    xmax: number;
+    totalWeight: number;
+  }
+
+  const clusters: BoxCluster[] = [];
+
+  const recomputeClusterConsensus = (cl: BoxCluster) => {
+    let wSum = 0;
+    let y0 = 0;
+    let x0 = 0;
+    let y1 = 0;
+    let x1 = 0;
+    for (const m of cl.members) {
+      wSum += m.weight;
+      y0 += m.box.ymin * m.weight;
+      x0 += m.box.xmin * m.weight;
+      y1 += m.box.ymax * m.weight;
+      x1 += m.box.xmax * m.weight;
+    }
+    if (wSum > 0) {
+      cl.ymin = Math.round(y0 / wSum);
+      cl.xmin = Math.round(x0 / wSum);
+      cl.ymax = Math.round(y1 / wSum);
+      cl.xmax = Math.round(x1 / wSum);
+      cl.totalWeight = wSum;
+    }
+  };
+
+  for (const cand of sorted) {
+    const famC = inferSubFamilyKey(cand.category, cand.label);
+    const areaC = (cand.xmax - cand.xmin) * (cand.ymax - cand.ymin);
+    const weight = cand.fromTile ? 1.65 : 1.0;
+
+    let bestCluster: BoxCluster | null = null;
+    let bestIoU = 0;
+
+    for (const cl of clusters) {
+      if ((cl.category === 'Space') !== (cand.category === 'Space')) continue;
+
+      const ix1 = Math.max(cl.xmin, cand.xmin);
+      const iy1 = Math.max(cl.ymin, cand.ymin);
+      const ix2 = Math.min(cl.xmax, cand.xmax);
+      const iy2 = Math.min(cl.ymax, cand.ymax);
+      if (ix2 <= ix1 || iy2 <= iy1) continue;
+
+      const inter = (ix2 - ix1) * (iy2 - iy1);
+      const areaE = (cl.xmax - cl.xmin) * (cl.ymax - cl.ymin);
+      const iou = inter / Math.max(1, areaE + areaC - inter);
+      const minContain = inter / Math.max(1, Math.min(areaE, areaC));
+      const areaRatio =
+        Math.max(areaE, areaC) / Math.max(1, Math.min(areaE, areaC));
+
+      let matchesCluster = false;
+      if (cand.category === 'Space') {
+        // Keep decomposed L-shaped sub-rectangles separate unless they substantially overlap
+        matchesCluster = cl.fam === famC ? iou > 0.52 : iou > 0.72;
+      } else if (cl.fam === famC) {
+        matchesCluster = iou > 0.36 || (minContain > 0.78 && areaRatio < 2.5);
+      } else if (cl.category === cand.category) {
+        matchesCluster = iou > 0.68;
+      } else {
+        matchesCluster = iou > 0.82;
+      }
+
+      if (matchesCluster && iou >= bestIoU) {
+        bestIoU = iou;
+        bestCluster = cl;
+      }
+    }
+
+    if (bestCluster) {
+      // Weighted Bounding-Box Consensus Fusion (WBF): fuse agreeing multi-tile & full-sheet boxes when sizes are consistent
+      const areaE =
+        (bestCluster.xmax - bestCluster.xmin) *
+        (bestCluster.ymax - bestCluster.ymin);
+      const ratio =
+        Math.max(areaE, areaC) / Math.max(1, Math.min(areaE, areaC));
+      if (ratio <= 2.1) {
+        bestCluster.members.push({ box: cand, weight });
+        if (
+          cand.fromTile &&
+          cand.label.length > bestCluster.label.length &&
+          bestCluster.label.toLowerCase() === bestCluster.category.toLowerCase()
+        ) {
+          bestCluster.label = cand.label;
+        }
+        recomputeClusterConsensus(bestCluster);
+      } else {
+        bestCluster.totalWeight += weight * 0.5;
+      }
+    } else {
+      clusters.push({
+        category: cand.category,
+        fam: famC,
+        label: cand.label,
+        members: [{ box: cand, weight }],
+        ymin: cand.ymin,
+        xmin: cand.xmin,
+        ymax: cand.ymax,
+        xmax: cand.xmax,
+        totalWeight: weight,
+      });
+    }
+  }
+
+  // Sort by consensus strength so multi-view verified symbols always rank first
+  clusters.sort((a, b) => b.totalWeight - a.totalWeight);
+
+  return clusters.map((cl) => ({
+    ymin: cl.ymin,
+    xmin: cl.xmin,
+    ymax: cl.ymax,
+    xmax: cl.xmax,
+    category: cl.category,
+    label: cl.label,
+  }));
+}
+
+async function detectAll2DBlueprintElements(
+  _ai: GoogleGenAI,
+  fileName: string,
+  mimeType: string,
+  dataBase64: string,
+  tiles?: SpatialTileInput[],
+): Promise<SpatialIndex2DItem[]> {
+  if (!mimeType.startsWith('image/')) return [];
+  const validTiles = Array.isArray(tiles)
+    ? tiles.filter(
+        (t) =>
+          t &&
+          typeof t.dataBase64 === 'string' &&
+          t.dataBase64.length > 32 &&
+          t.x1 > t.x0 &&
+          t.y1 > t.y0,
+      ).slice(0, 6)
+    : [];
+
+  const key = hashPayloadKey(
+    'idx2d-rob2',
+    mimeType,
+    dataBase64,
+    validTiles.length,
+  );
+  const cached = spatialIndexCache.get(key);
+  if (cached) return cached;
+
+  const inflight = spatialIndexInFlight.get(key);
+  if (inflight) return inflight;
+
+  const task = (async (): Promise<SpatialIndex2DItem[]> => {
+    try {
+      const endpoint = await resolveRoboticsLabeler();
+      const workerTasks: Array<() => Promise<RawCandidateBox[]>> = [];
+
+      // 1) High-resolution overlapping tile × category specialist workers (up to 6 × 7 = 42 parallel tasks)
+      for (const tile of validTiles) {
+        for (const spec of SPECIALIST_SPECS) {
+          if (!spec.tileAllowed) continue;
+          const specialistTraining =
+            trainingEngine.buildSpatialHighlightingTrainingGuide({
+              category: spec.category,
+            });
+          workerTasks.push(async () => {
+            try {
+              const resp = await callRoboticsWithRetry(() =>
+                endpoint.client.models.generateContent({
+                  model: endpoint.model,
+                  contents: {
+                    parts: [
+                      {
+                        inlineData: {
+                          mimeType: tile.mimeType || 'image/jpeg',
+                          data: tile.dataBase64,
+                        },
+                      },
+                      {
+                        text: `${spec.prompt}\n\n${specialistTraining}\n\nOutput tight box_2d as [ymin, xmin, ymax, xmax] normalized 0..1000 relative to this image crop.`,
+                      },
+                    ],
+                  },
+                  config: {
+                    thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+                    responseMimeType: 'application/json',
+                    responseSchema: DETECT_2D_INDEX_SCHEMA,
+                  },
+                }),
+              );
+              const parsed = parseJsonObjectSafe(resp.text ?? '{"elements":[]}');
+              const rawEls = Array.isArray(parsed.elements) ? parsed.elements : [];
+              const mapped: RawCandidateBox[] = [];
+
+              for (const item of rawEls) {
+                if (!item || typeof item !== 'object') continue;
+                const rec = item as Record<string, unknown>;
+                const norm = normalizeBoxes2D([rec]);
+                if (norm.length === 0) continue;
+                const lb = norm[0];
+
+                // Discard symbols clipped right along an internal tile boundary (covered whole by overlapping neighbor tile)
+                if (tile.x0 > 0 && lb.xmin <= 14) continue;
+                if (tile.x1 < 1000 && lb.xmax >= 986) continue;
+                if (tile.y0 > 0 && lb.ymin <= 14) continue;
+                if (tile.y1 < 1000 && lb.ymax >= 986) continue;
+                if (lb.xmax - lb.xmin > 850 && lb.ymax - lb.ymin > 850) continue;
+
+                const gXMin = Math.max(
+                  0,
+                  Math.min(
+                    1000,
+                    Math.round(tile.x0 + (lb.xmin / 1000) * (tile.x1 - tile.x0)),
+                  ),
+                );
+                const gXMax = Math.max(
+                  0,
+                  Math.min(
+                    1000,
+                    Math.round(tile.x0 + (lb.xmax / 1000) * (tile.x1 - tile.x0)),
+                  ),
+                );
+                const gYMin = Math.max(
+                  0,
+                  Math.min(
+                    1000,
+                    Math.round(tile.y0 + (lb.ymin / 1000) * (tile.y1 - tile.y0)),
+                  ),
+                );
+                const gYMax = Math.max(
+                  0,
+                  Math.min(
+                    1000,
+                    Math.round(tile.y0 + (lb.ymax / 1000) * (tile.y1 - tile.y0)),
+                  ),
+                );
+
+                if (gXMax - gXMin < 6 || gYMax - gYMin < 6) continue;
+
+                mapped.push({
+                  ymin: gYMin,
+                  xmin: gXMin,
+                  ymax: gYMax,
+                  xmax: gXMax,
+                  category: spec.category,
+                  label: String(rec.label || lb.label || spec.category).trim(),
+                  fromTile: true,
+                });
+              }
+              return mapped;
+            } catch {
+              return [];
+            }
+          });
+        }
+      }
+
+      // 2) Full-sheet specialist workers (8 parallel tasks -> 42 + 8 = 50 parallel requests max)
+      for (const spec of SPECIALIST_SPECS) {
+        const fullSheetTraining =
+          trainingEngine.buildSpatialHighlightingTrainingGuide({
+            category: spec.category,
+            fileName,
+          });
+        workerTasks.push(async () => {
+          try {
+            const resp = await callRoboticsWithRetry(() =>
+              endpoint.client.models.generateContent({
+                model: endpoint.model,
+                contents: {
+                  parts: [
+                    { inlineData: { mimeType, data: dataBase64 } },
+                    {
+                      text: `Blueprint file: "${fileName}".\n${spec.prompt}\n\n${fullSheetTraining}\n\nOutput tight box_2d as [ymin, xmin, ymax, xmax] normalized 0..1000.`,
+                    },
+                  ],
+                },
+                config: {
+                  thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+                  responseMimeType: 'application/json',
+                  responseSchema: DETECT_2D_INDEX_SCHEMA,
+                },
+              }),
+            );
+            const parsed = parseJsonObjectSafe(resp.text ?? '{"elements":[]}');
+            const rawEls = Array.isArray(parsed.elements) ? parsed.elements : [];
+            const out: RawCandidateBox[] = [];
+            for (const item of rawEls) {
+              if (!item || typeof item !== 'object') continue;
+              const rec = item as Record<string, unknown>;
+              const norm = normalizeBoxes2D([rec], undefined, spec.category === 'Space');
+              if (norm.length === 0) continue;
+              const b = norm[0];
+              out.push({
+                ymin: b.ymin,
+                xmin: b.xmin,
+                ymax: b.ymax,
+                xmax: b.xmax,
+                category: spec.category,
+                label: String(rec.label || b.label || spec.category).trim(),
+                fromTile: false,
+              });
+            }
+            return out;
+          } catch {
+            return [];
+          }
+        });
+      }
+
+      const batches = await runWithConcurrencyLimit(
+        workerTasks.slice(0, MAX_PARALLEL_LABEL_REQUESTS),
+        MAX_PARALLEL_LABEL_REQUESTS,
+      );
+      const fused = fuseParallelSpatialDetections(batches.flat());
+
+      if (fused.length > 0) {
+        if (spatialIndexCache.size >= 40) {
+          const oldest = spatialIndexCache.keys().next().value;
+          if (oldest) spatialIndexCache.delete(oldest);
+        }
+        spatialIndexCache.set(key, fused);
+      }
+      return fused;
+    } catch (err) {
+      console.warn('2D Robotics spatial index warning:', err);
+      return [];
+    } finally {
+      spatialIndexInFlight.delete(key);
+    }
+  })();
+
+  spatialIndexInFlight.set(key, task);
+  return task;
+}
+
+function matchFromSpatialIndex(
+  index: SpatialIndex2DItem[],
+  opts: {
+    name: string;
+    altName?: string;
+    category?: string;
+    isSpace?: boolean;
+    expectedCount?: number;
+  },
+): NormalizedBox2D[] {
+  if (index.length === 0) return [];
+  const rawTokens = `${opts.name} ${opts.altName ?? ''}`
+    .toLowerCase()
+    .replace(/[^a-z0-9äöüß]+/g, ' ')
+    .split(/\s+/)
+    .filter((t) => t.length >= 2 && !/^\d+$/.test(t) && !['items', 'count', 'total', 'and', 'the'].includes(t));
+
+  const singularize = (w: string) =>
+    w.endsWith('ies')
+      ? `${w.slice(0, -3)}y`
+      : w.endsWith('es') && w.length > 4 && !w.endsWith('bles') && !w.endsWith('oves')
+        ? w.slice(0, -2)
+        : w.endsWith('s') && w.length > 3
+          ? w.slice(0, -1)
+          : w;
+
+  const tokens = Array.from(new Set(rawTokens.map(singularize)));
+  if (tokens.length === 0) return [];
+
+  const pool = index.filter((el) => {
+    const elIsSpace = el.category.toLowerCase() === 'space';
+    return opts.isSpace ? elIsSpace : !elIsSpace;
+  });
+
+  // Score each indexed element against target tokens & category
+  const scored = pool
+    .map((el) => {
+      const hay = `${el.label} ${el.category}`.toLowerCase();
+      let score = 0;
+      for (const tk of tokens) {
+        if (hay.includes(tk)) score += 3;
+      }
+      if (opts.category) {
+        const catLow = opts.category.toLowerCase();
+        const elCat = el.category.toLowerCase();
+        if (catLow === 'openings' && (elCat === 'door' || elCat === 'window')) {
+          score += 1;
+        } else if (
+          catLow.includes('plumbing') &&
+          (elCat === 'plumbing' || elCat === 'appliance')
+        ) {
+          score += 1;
+        } else if (catLow === elCat) {
+          score += 1;
+        }
+      }
+      return { el, score };
+    })
+    .filter((s) => s.score >= 3)
+    .sort((a, b) => b.score - a.score);
+
+  if (scored.length === 0) return [];
+  const bestScore = scored[0].score;
+  const topTier = scored
+    .filter((s) => s.score >= Math.max(3, bestScore - 2))
+    .map((s) => ({
+      ymin: s.el.ymin,
+      xmin: s.el.xmin,
+      ymax: s.el.ymax,
+      xmax: s.el.xmax,
+      label: s.el.label,
+    }));
+
+  return normalizeBoxes2D(
+    topTier,
+    opts.isSpace ? undefined : opts.expectedCount,
+    opts.isSpace,
+  );
 }
 
 const EVIDENCE_DESCRIPTION =
@@ -638,18 +1512,8 @@ const ANALYSIS_RESPONSE_SCHEMA = {
           boxes2D: {
             type: Type.ARRAY,
             description:
-              'For 2D floorplan images/photos only: normalized 0..1000 bounding boxes locating this space in the image.',
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                ymin: { type: Type.INTEGER },
-                xmin: { type: Type.INTEGER },
-                ymax: { type: Type.INTEGER },
-                xmax: { type: Type.INTEGER },
-                label: { type: Type.STRING },
-              },
-              required: ['ymin', 'xmin', 'ymax', 'xmax'],
-            },
+              'For 2D blueprints/floorplans/photos: normalized [ymin, xmin, ymax, xmax] (0..1000) bounding box enclosing the interior wall boundary of this room/space.',
+            items: BOX_2D_ITEMS_SCHEMA,
           },
         },
         required: [
@@ -659,6 +1523,7 @@ const ANALYSIS_RESPONSE_SCHEMA = {
           'dimensionsText',
           'dimensionsEvidence',
           'notes',
+          'boxes2D',
         ],
       },
     },
@@ -687,18 +1552,8 @@ const ANALYSIS_RESPONSE_SCHEMA = {
           boxes2D: {
             type: Type.ARRAY,
             description:
-              'For 2D images/photos only: normalized 0..1000 bounding boxes locating visible instances of this object in the image.',
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                ymin: { type: Type.INTEGER },
-                xmin: { type: Type.INTEGER },
-                ymax: { type: Type.INTEGER },
-                xmax: { type: Type.INTEGER },
-                label: { type: Type.STRING },
-              },
-              required: ['ymin', 'xmin', 'ymax', 'xmax'],
-            },
+              'For 2D blueprints/floorplans/photos: normalized [ymin, xmin, ymax, xmax] (0..1000) bounding boxes tightly enclosing each individual symbol/instance of this object.',
+            items: BOX_2D_ITEMS_SCHEMA,
           },
         },
         required: [
@@ -709,6 +1564,7 @@ const ANALYSIS_RESPONSE_SCHEMA = {
           'evidence',
           'confidence',
           'locationsOrNotes',
+          'boxes2D',
         ],
       },
     },
@@ -811,21 +1667,11 @@ const ASK_RESPONSE_SCHEMA = {
           boxes2D: {
             type: Type.ARRAY,
             description:
-              'For 2D floorplan images/photos: normalized 0..1000 bounding boxes locating ONLY the exact instances meeting the criteria (count in boxes2D should equal expectedCount).',
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                ymin: { type: Type.INTEGER },
-                xmin: { type: Type.INTEGER },
-                ymax: { type: Type.INTEGER },
-                xmax: { type: Type.INTEGER },
-                label: { type: Type.STRING },
-              },
-              required: ['ymin', 'xmin', 'ymax', 'xmax'],
-            },
+              'For ALL 2D blueprints/drawings/photos: normalized [ymin, xmin, ymax, xmax] (0..1000) bounding boxes tightly enclosing ONLY the exact matching symbols or rooms stated in the answer (boxes2D.length should equal expectedCount).',
+            items: BOX_2D_ITEMS_SCHEMA,
           },
         },
-        required: ['id', 'label', 'keywords'],
+        required: ['id', 'label', 'keywords', 'boxes2D'],
       },
     },
   },
@@ -837,17 +1683,9 @@ const LOCATE_2D_SCHEMA = {
   properties: {
     boxes2D: {
       type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          ymin: { type: Type.INTEGER },
-          xmin: { type: Type.INTEGER },
-          ymax: { type: Type.INTEGER },
-          xmax: { type: Type.INTEGER },
-          label: { type: Type.STRING },
-        },
-        required: ['ymin', 'xmin', 'ymax', 'xmax'],
-      },
+      description:
+        'Exact list of normalized [ymin, xmin, ymax, xmax] (0..1000) bounding boxes tightly enclosing ONLY the matching architectural symbols or room spaces in the 2D blueprint.',
+      items: BOX_2D_ITEMS_SCHEMA,
     },
   },
   required: ['boxes2D'],
@@ -997,6 +1835,7 @@ async function startServer() {
         fileKind,
         mimeType,
         dataBase64,
+        tiles,
         secondaryImageBase64,
         structuredSummary,
         calibrationNote,
@@ -1005,6 +1844,7 @@ async function startServer() {
         fileKind: string;
         mimeType?: string;
         dataBase64?: string;
+        tiles?: SpatialTileInput[];
         secondaryImageBase64?: string;
         structuredSummary?: Record<string, unknown>;
         calibrationNote?: string;
@@ -1046,7 +1886,7 @@ async function startServer() {
 
       const contextLines: string[] = [
         `Analyze this uploaded ${fileKind} file named "${fileName}".`,
-        'Perform an exact architectural quantity takeoff following the Junction 2026 training conventions: distinguish Gross Rectangular Footprint from Printed Area Summaries, Sum of Labelled Interior Rooms, and Porch/Exterior Spaces. Flag any discrepancy explicitly without overwriting printed values. Classify every measurement as Explicit, Calculated, Estimated, or Unknown. Mark ceiling height and interior volume as Unknown (null) unless explicitly printed or present in 3D/section geometry. Count every lamp/lighting fixture (strictly separated from lighting switches/receptacles), door, window, sink, toilet, shower/bathtub, furniture item, and appliance. When inspecting a 2D image/floorplan, also populate "boxes2D" with normalized [0..1000] bounding boxes for each room and detected object instance so users can highlight them in the drawing.',
+        'Perform an exact architectural quantity takeoff following the Junction 2026 training conventions: distinguish Gross Rectangular Footprint from Printed Area Summaries, Sum of Labelled Interior Rooms, and Porch/Exterior Spaces. Flag any discrepancy explicitly without overwriting printed values. Classify every measurement as Explicit, Calculated, Estimated, or Unknown. Mark ceiling height and interior volume as Unknown (null) unless explicitly printed or present in 3D/section geometry. Count every lamp/lighting fixture (strictly separated from lighting switches/receptacles), door, window, sink, toilet, shower/bathtub, furniture item, and appliance. When inspecting any 2D blueprint/floorplan/image (PNG/JPG/SVG/DXF/PDF), populate "boxes2D" with tight box_2d: [ymin, xmin, ymax, xmax] coordinates (0..1000) for every room boundary and every individual detected symbol instance (e.g. each door leaf + swing arc, each window glazing band, each luminaire, each sanitary fixture) so users can highlight them accurately on the blueprint.',
       ];
 
       if (calibrationNote) {
@@ -1069,16 +1909,31 @@ async function startServer() {
 
       parts.push({ text: contextLines.join('\n\n') });
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-4-hydrogen',
-        contents: { parts },
-        config: {
-          systemInstruction: trainingEngine.buildTrainedSystemInstruction(),
-          thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
-          responseMimeType: 'application/json',
-          responseSchema: ANALYSIS_RESPONSE_SCHEMA,
-        },
-      });
+      const is2DImage =
+        fileKind.startsWith('2d-') &&
+        Boolean(dataBase64 && mimeType && mimeType.startsWith('image/'));
+
+      const [response, spatialIndex2D] = await Promise.all([
+        ai.models.generateContent({
+          model: 'gemini-4-hydrogen',
+          contents: { parts },
+          config: {
+            systemInstruction: trainingEngine.buildTrainedSystemInstruction(),
+            thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+            responseMimeType: 'application/json',
+            responseSchema: ANALYSIS_RESPONSE_SCHEMA,
+          },
+        }),
+        is2DImage && mimeType && dataBase64
+          ? detectAll2DBlueprintElements(
+              ai,
+              fileName,
+              mimeType,
+              dataBase64,
+              tiles,
+            )
+          : Promise.resolve([] as SpatialIndex2DItem[]),
+      ]);
 
       const rawText = (response.text ?? '{}').trim();
       const parsedAnalysis = parseJsonObjectSafe(rawText);
@@ -1086,8 +1941,63 @@ async function startServer() {
         parsedAnalysis,
         fileKind,
       );
+
+      // Enrich rooms & detectedObjects with pinpoint boxes from dedicated 2D spatial detector
+      if (spatialIndex2D.length > 0) {
+        if (Array.isArray(verifiedAnalysis.rooms)) {
+          verifiedAnalysis.rooms = verifiedAnalysis.rooms.map(
+            (room: Record<string, any>) => {
+              const fromIdx = matchFromSpatialIndex(spatialIndex2D, {
+                name: String(room.name ?? ''),
+                altName:
+                  typeof room.labelInDrawing === 'string'
+                    ? room.labelInDrawing
+                    : undefined,
+                isSpace: true,
+                expectedCount: 1,
+              });
+              if (
+                fromIdx.length > 0 &&
+                (!Array.isArray(room.boxes2D) || room.boxes2D.length === 0)
+              ) {
+                return { ...room, boxes2D: fromIdx };
+              }
+              return room;
+            },
+          );
+        }
+
+        if (Array.isArray(verifiedAnalysis.detectedObjects)) {
+          verifiedAnalysis.detectedObjects =
+            verifiedAnalysis.detectedObjects.map((obj: Record<string, any>) => {
+              const objCount = typeof obj.count === 'number' ? obj.count : 0;
+              const fromIdx = matchFromSpatialIndex(spatialIndex2D, {
+                name: String(obj.name ?? ''),
+                category:
+                  typeof obj.category === 'string' ? obj.category : undefined,
+                isSpace: false,
+                expectedCount: objCount > 0 ? objCount : undefined,
+              });
+              if (fromIdx.length === 0) return obj;
+              const existingLen = Array.isArray(obj.boxes2D)
+                ? obj.boxes2D.length
+                : 0;
+              const targetCnt = objCount || fromIdx.length;
+              if (
+                existingLen === 0 ||
+                Math.abs(fromIdx.length - targetCnt) <=
+                  Math.abs(existingLen - targetCnt)
+              ) {
+                return { ...obj, boxes2D: fromIdx };
+              }
+              return obj;
+            });
+        }
+      }
+
       res.json({
         analysis: verifiedAnalysis,
+        spatialIndex2D,
         matchedGroundTruth: grounding.matchedFileQAs,
       });
     } catch (err) {
@@ -1200,7 +2110,7 @@ Respond in the required JSON schema object with keys "answer" and "highlights":
    STRICT SUBSET ACCURACY RULE:
    - If the answer identifies a specific subset (for example "6 interior doors" or "6 doors on Floor 1" out of more total doors), set "expectedCount": 6 and "filterDescription" describing the exact requirement.
    - For IFC models: populate "ifcIds" with the exact matching entity IDs (e.g. ["#412", ...]) from the instance list so ONLY those 6 elements highlight, never extra doors. Also set "storey" / "exactNames" / "excludeKeywords" when applicable.
-   - For 2D raster images/floorplans: populate "boxes2D" with bounding boxes for ONLY those exact matching instances (e.g. 6 boxes for 6 doors, never boxing non-matching doors).`,
+   - For ALL 2D blueprints, floor plans, CAD drawings, PDFs, SVGs, and images: ALWAYS populate "boxes2D" with tight box_2d: [ymin, xmin, ymax, xmax] coordinates in 0..1000 enclosing ONLY those exact matching symbols or room boundaries (for example, 6 boxes tightly around the 6 matching door leaf + swing arc symbols, never boxing non-matching doors or unrelated text).`,
       );
 
       parts.push({ text: promptSections.join('\n\n') });
@@ -1322,9 +2232,25 @@ Respond in the required JSON schema object with keys "answer" and "highlights":
         .replace(/\n{3,}/g, '\n\n')
         .trim();
 
+      const normalizedHighlights = Array.isArray(extracted.highlights)
+        ? extracted.highlights.map((rawHl) => {
+            if (!rawHl || typeof rawHl !== 'object') return rawHl;
+            const rec = rawHl as Record<string, unknown>;
+            const expCount =
+              typeof rec.expectedCount === 'number' && rec.expectedCount > 0
+                ? Math.round(rec.expectedCount)
+                : undefined;
+            const normBoxes = normalizeBoxes2D(rec.boxes2D, expCount);
+            return {
+              ...rec,
+              ...(normBoxes.length > 0 ? { boxes2D: normBoxes } : { boxes2D: undefined }),
+            };
+          })
+        : [];
+
       res.json({
         answer: cleanAnswer || 'No response generated.',
-        highlights: extracted.highlights,
+        highlights: normalizedHighlights,
       });
     } catch (err) {
       console.error('Ask error:', err);
@@ -1334,70 +2260,277 @@ Respond in the required JSON schema object with keys "answer" and "highlights":
     }
   });
 
+  app.post('/api/index-2d', async (req: Request, res: Response) => {
+    try {
+      const { fileName, mimeType, dataBase64, tiles } = req.body as {
+        fileName?: string;
+        mimeType?: string;
+        dataBase64?: string;
+        tiles?: SpatialTileInput[];
+      };
+      if (!dataBase64 || !mimeType) {
+        res.status(400).json({ error: 'Image data and mimeType are required.' });
+        return;
+      }
+      const ai = getAiClient();
+      const elements = await detectAll2DBlueprintElements(
+        ai,
+        fileName || 'blueprint',
+        mimeType,
+        dataBase64,
+        tiles,
+      );
+      const endpoint = await resolveRoboticsLabeler();
+      res.json({
+        elements,
+        model: endpoint.model,
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to index 2D blueprint.';
+      res.status(500).json({ error: message });
+    }
+  });
+
   app.post('/api/locate-2d', async (req: Request, res: Response) => {
     try {
       const {
         fileName,
         label,
+        category,
         keywords,
         filterDescription,
         expectedCount,
         answerContext,
         mimeType,
         dataBase64,
+        tiles,
       } = req.body as {
         fileName: string;
         label: string;
+        category?: string;
         keywords?: string[];
         filterDescription?: string;
         expectedCount?: number;
         answerContext?: string;
         mimeType?: string;
         dataBase64?: string;
+        tiles?: SpatialTileInput[];
       };
       if (!dataBase64 || !mimeType || !label) {
         res.status(400).json({ error: 'Image data and target label are required.' });
         return;
       }
-      const ai = getAiClient();
+
+      const cacheKey = hashPayloadKey(
+        'loc2d-rob2',
+        label,
+        category,
+        (keywords ?? []).join(','),
+        filterDescription,
+        expectedCount,
+        mimeType,
+        dataBase64,
+      );
+      const cachedBoxes = locate2DCache.get(cacheKey);
+      if (cachedBoxes) {
+        res.json({ boxes2D: cachedBoxes });
+        return;
+      }
+
+      const endpoint = await resolveRoboticsLabeler();
       const criteriaParts: string[] = [
         `Target: "${label}"`,
+        category ? `Category: ${category}` : '',
         keywords && keywords.length > 0 ? `Keywords: ${keywords.join(', ')}` : '',
-        filterDescription ? `Exact Selection Criteria: ${filterDescription}` : '',
-        expectedCount ? `Expected Exact Matching Count: ${expectedCount}` : '',
+        filterDescription ? `Criteria: ${filterDescription}` : '',
+        expectedCount && expectedCount > 0
+          ? `Exact Qualifying Count: ${expectedCount}`
+          : '',
         answerContext
-          ? `Verified Answer Context:\n${answerContext.slice(0, 1200)}`
+          ? `Context:\n${answerContext.slice(0, 900)}`
           : '',
       ].filter(Boolean);
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-4-hydrogen',
-        contents: {
-          parts: [
-            { inlineData: { mimeType, data: dataBase64 } },
-            {
-              text: `Locate ONLY the specific visible instances in "${fileName}" that satisfy ALL of these requirements:
+      const trainedSymbolGuide =
+        trainingEngine.buildSpatialHighlightingTrainingGuide({
+          category: category || label,
+          fileName,
+        });
+
+      const promptBody = `Detect the exact 2D bounding boxes (box_2d as [ymin, xmin, ymax, xmax] normalized to 0..1000) in "${fileName}" for ONLY the visible instances matching:
 ${criteriaParts.join('\n')}
 
-STRICT RULE:
-- Do NOT include bounding boxes for elements outside these exact requirements (for example, if only 6 interior doors match the criteria out of 10 total doors, return ONLY those 6 doors and exclude the other 4).
-- Return normalized [0..1000] ymin, xmin, ymax, xmax bounding boxes in JSON.`,
+${trainedSymbolGuide}`;
+
+      const validTiles =
+        !filterDescription &&
+        category !== 'Space' &&
+        Array.isArray(tiles)
+          ? tiles
+              .filter(
+                (t) =>
+                  t &&
+                  typeof t.dataBase64 === 'string' &&
+                  t.dataBase64.length > 32 &&
+                  t.x1 > t.x0 &&
+                  t.y1 > t.y0,
+              )
+              .slice(0, 6)
+          : [];
+
+      let boxes: NormalizedBox2D[] = [];
+
+      if (validTiles.length > 0) {
+        // Fan out in parallel across all overlapping high-res tiles + full sheet simultaneously
+        const locateTasks: Array<() => Promise<RawCandidateBox[]>> = [
+          ...validTiles.map((tile) => async () => {
+            try {
+              const resp = await callRoboticsWithRetry(() =>
+                endpoint.client.models.generateContent({
+                  model: endpoint.model,
+                  contents: {
+                    parts: [
+                      {
+                        inlineData: {
+                          mimeType: tile.mimeType || 'image/jpeg',
+                          data: tile.dataBase64,
+                        },
+                      },
+                      { text: promptBody },
+                    ],
+                  },
+                  config: {
+                    thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+                    responseMimeType: 'application/json',
+                    responseSchema: LOCATE_2D_SCHEMA,
+                  },
+                }),
+              );
+              const parsed = parseJsonObjectSafe(resp.text ?? '{"boxes2D":[]}');
+              const localBoxes = normalizeBoxes2D(parsed.boxes2D);
+              const mapped: RawCandidateBox[] = [];
+              for (const lb of localBoxes) {
+                if (tile.x0 > 0 && lb.xmin <= 14) continue;
+                if (tile.x1 < 1000 && lb.xmax >= 986) continue;
+                if (tile.y0 > 0 && lb.ymin <= 14) continue;
+                if (tile.y1 < 1000 && lb.ymax >= 986) continue;
+                if (lb.xmax - lb.xmin > 850 && lb.ymax - lb.ymin > 850) continue;
+                mapped.push({
+                  ymin: Math.max(
+                    0,
+                    Math.min(
+                      1000,
+                      Math.round(tile.y0 + (lb.ymin / 1000) * (tile.y1 - tile.y0)),
+                    ),
+                  ),
+                  xmin: Math.max(
+                    0,
+                    Math.min(
+                      1000,
+                      Math.round(tile.x0 + (lb.xmin / 1000) * (tile.x1 - tile.x0)),
+                    ),
+                  ),
+                  ymax: Math.max(
+                    0,
+                    Math.min(
+                      1000,
+                      Math.round(tile.y0 + (lb.ymax / 1000) * (tile.y1 - tile.y0)),
+                    ),
+                  ),
+                  xmax: Math.max(
+                    0,
+                    Math.min(
+                      1000,
+                      Math.round(tile.x0 + (lb.xmax / 1000) * (tile.x1 - tile.x0)),
+                    ),
+                  ),
+                  category: category || 'All',
+                  label: lb.label || label,
+                  fromTile: true,
+                });
+              }
+              return mapped;
+            } catch {
+              return [];
+            }
+          }),
+          async () => {
+            try {
+              const resp = await callRoboticsWithRetry(() =>
+                endpoint.client.models.generateContent({
+                  model: endpoint.model,
+                  contents: {
+                    parts: [
+                      { inlineData: { mimeType, data: dataBase64 } },
+                      { text: promptBody },
+                    ],
+                  },
+                  config: {
+                    thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+                    responseMimeType: 'application/json',
+                    responseSchema: LOCATE_2D_SCHEMA,
+                  },
+                }),
+              );
+              const parsed = parseJsonObjectSafe(resp.text ?? '{"boxes2D":[]}');
+              return normalizeBoxes2D(parsed.boxes2D).map((b) => ({
+                ...b,
+                category: category || 'All',
+                label: b.label || label,
+                fromTile: false,
+              }));
+            } catch {
+              return [];
+            }
+          },
+        ];
+
+        const batches = await runWithConcurrencyLimit(
+          locateTasks,
+          MAX_PARALLEL_LABEL_REQUESTS,
+        );
+        const fused = fuseParallelSpatialDetections(batches.flat());
+        boxes =
+          expectedCount && expectedCount > 0 && fused.length > expectedCount
+            ? fused.slice(0, expectedCount)
+            : fused;
+      } else {
+        const response = await callRoboticsWithRetry(() =>
+          endpoint.client.models.generateContent({
+            model: endpoint.model,
+            contents: {
+              parts: [
+                { inlineData: { mimeType, data: dataBase64 } },
+                { text: promptBody },
+              ],
             },
-          ],
-        },
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: LOCATE_2D_SCHEMA,
-        },
-      });
-      const rawLoc = response.text ?? '{"boxes2D":[]}';
-      const parsed = parseJsonObjectSafe(rawLoc);
-      let boxes = Array.isArray(parsed.boxes2D) ? parsed.boxes2D : [];
-      if (expectedCount && expectedCount > 0 && boxes.length > expectedCount) {
-        boxes = boxes.slice(0, expectedCount);
+            config: {
+              thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+              responseMimeType: 'application/json',
+              responseSchema: LOCATE_2D_SCHEMA,
+            },
+          }),
+        );
+        const rawLoc = response.text ?? '{"boxes2D":[]}';
+        const parsed = parseJsonObjectSafe(rawLoc);
+        boxes = normalizeBoxes2D(
+          parsed.boxes2D,
+          expectedCount,
+          category === 'Space',
+        );
       }
-      res.json({ boxes2D: boxes });
+
+      if (boxes.length > 0) {
+        if (locate2DCache.size >= 120) {
+          const oldest = locate2DCache.keys().next().value;
+          if (oldest) locate2DCache.delete(oldest);
+        }
+        locate2DCache.set(cacheKey, boxes);
+      }
+      res.json({ boxes2D: boxes, model: endpoint.model });
     } catch (err) {
+      console.error('Locate 2D error:', err);
       const message =
         err instanceof Error ? err.message : 'Failed to locate objects in 2D image.';
       res.status(500).json({ error: message });

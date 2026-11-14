@@ -386,7 +386,114 @@ LEARNED GROUND-TRUTH DOMAIN RULES (MANDATORY):
 4. Response Style & Formatting (STRICT):
    - Always answer strictly in English, concisely, factually, and clearly structured.
    - NEVER use Markdown asterisks (**bold**, *italic*, or * bullet markers) or decorative formatting symbols.
-   - Use short labeled lines, hyphenated bullets (- ), or numbered lists (1. ) without extra spaces or redundant blank lines.${customRules.length > 0 ? `\n\nUSER-TAUGHT RULES & CORRECTIONS (HIGHEST PRIORITY):\n${customRules.join('\n')}` : ''}`;
+   - Use short labeled lines, hyphenated bullets (- ), or numbered lists (1. ) without extra spaces or redundant blank lines.
+5. 2D Spatial Highlighting & Bounding-Box Precision (boxes2D = [ymin, xmin, ymax, xmax] in 0..1000):
+   - Every box_2d MUST tightly hug ONLY the drawn ink strokes of that single architectural symbol, excluding adjacent solid walls, dimension lines, text callouts, and empty floor.
+   - Doors: enclose ONLY the hinged door leaf + swing arc wedge (or sliding/folding door panel in its opening). NEVER mistake curved corner showers, stair direction arrows, or open cased archways without a leaf for doors.
+   - Windows: enclose ONLY the narrow 2-to-4 parallel glazing lines embedded inside the structural wall thickness (jamb to jamb). NEVER include solid wall segments, radiators, cabinets, or exterior balcony railings.
+   - Furniture: emit ONE separate tight box per individual chair, armchair, stool, sofa, table, desk, bed, nightstand, or wardrobe module bank. NEVER merge a dining table and its surrounding chairs into one combined box, and NEVER confuse sauna benches (room S) with beds or stairs.
+   - Plumbing & Appliances: box ONLY each individual toilet (cistern + oval bowl), sink basin (not the entire countertop), shower tray, bathtub, 4-ring stove/cooktop (L/Liesi/Herd), refrigerator (JK/PK), dishwasher (APK), or washing machine (PPK/PK/WM).
+   - Rooms / Spaces: hug the inner wall faces of the room. For L-shaped, T-shaped, or U-shaped rooms/corridors, output 2 or 3 non-overlapping interior rectangles with the same room label so adjacent rooms are never overlapped.${customRules.length > 0 ? `\n\nUSER-TAUGHT RULES & CORRECTIONS (HIGHEST PRIORITY):\n${customRules.join('\n')}` : ''}`;
+  }
+
+  buildSpatialHighlightingTrainingGuide(params?: {
+    category?: string;
+    fileName?: string;
+  }): string {
+    const cat = (params?.category ?? 'All').toLowerCase();
+    const lines: string[] = [
+      'ARCHITECTURAL CAD & BLUEPRINT SYMBOL TRAINING (STRICT VISUAL DISAMBIGUATION):',
+      '- Coordinate convention: box_2d = [ymin, xmin, ymax, xmax] in integers 0..1000. Tightly hug ONLY the symbol strokes with ZERO extra wall or floor padding.',
+    ];
+
+    if (cat === 'all' || cat.includes('door') || cat.includes('opening')) {
+      lines.push(
+        '- DOORS (POSITIVE): Hinged door = straight thin leaf line + 45°-90° quarter-circle swing arc bridging a wall gap; Double door = two symmetric leaves + two meeting arcs (1 box around the pair); Sliding/pocket door = thin panel line recessed into or parallel to wall track; Bi-fold door = V-chevron panels across closet opening. Stop box strictly at hinge jamb and latch jamb—do NOT include solid black wall segments.',
+        '- DOORS (NEGATIVE — NEVER BOX AS DOOR): Curved corner shower stalls (quarter-circle inside bathroom/PH/KPH/Bad with drain), open wall gaps/archways with NO door leaf, staircase arrows, or north arrows.',
+      );
+    }
+
+    if (cat === 'all' || cat.includes('window') || cat.includes('opening')) {
+      lines.push(
+        '- WINDOWS (POSITIVE): 2 to 4 thin parallel glazing lines (with jamb end-ticks/mullions) embedded strictly INSIDE an exterior or partition wall band. Box width/height across the wall must be narrow (typically 8-28 units), spanning jamb-to-jamb.',
+        '- WINDOWS (NEGATIVE — NEVER BOX AS WINDOW): Solid black/hatched wall segments between windows, wall-mounted kitchen cabinets, wardrobes with X/diagonal lines, radiators, balcony railings outside the wall, or hinged balcony doors with a swing arc.',
+      );
+    }
+
+    if (cat === 'all' || cat.includes('furniture')) {
+      lines.push(
+        '- FURNITURE (INDIVIDUAL SYMBOL RULE): Emit a separate tight box for EVERY individual item—NEVER group a table + chairs or bed + nightstands into one rectangle:',
+        '  1. Chairs / Stools / Armchairs: small U-shaped, D-shaped, or square seat contours (including dining chairs tucked half-way around a dining table—box each visible chair individually!).',
+        '  2. Tables / Desks / Islands: box ONLY the tabletop rectangle/circle perimeter ("dining table", "coffee table", "desk", "nightstand", "kitchen island"), excluding chairs protruding around it.',
+        '  3. Beds: box mattress + headboard frame ("double bed", "single bed", "crib"); keep adjacent nightstands separate.',
+        '  4. Sofas / Couches: box upholstered sofa or L-sectional contour tightly.',
+        '  5. Wardrobes / Closets / Cabinets: 60 cm deep storage rectangles marked with X cross, diagonal rod line, or SK/VH/KAAPPI/Schrank tags.',
+        '- FURNITURE (NEGATIVE): NEVER misclassify parallel wooden sauna benches inside room "S"/"Sauna", stair treads, kitchen base counters with sinks/stoves, or floor tile grids as furniture.',
+      );
+    }
+
+    if (cat === 'all' || cat.includes('plumbing')) {
+      lines.push(
+        '- PLUMBING FIXTURES (POSITIVE):',
+        '  1. Toilet ("toilet"): compact wall cistern + oval/D-shaped bowl (~40x65 cm, often tagged WC). Box ONLY the fixture contour, NEVER the whole WC room.',
+        '  2. Sink ("sink"): oval/rectangular basin bowl with drain dot/faucet tick set into a bathroom vanity or kitchen counter (double-bowl kitchen sink = 1 tight sink box, excluding bare counter length).',
+        '  3. Shower ("shower"): square or quarter-round shower zone with crossed drain diagonals or floor drain circle + mixer.',
+        '  4. Bathtub ("bathtub"): rounded inner oval tub inside rectangular rim (~70x170 cm).',
+      );
+    }
+
+    if (cat === 'all' || cat.includes('appliance') || cat.includes('plumbing')) {
+      lines.push(
+        '- APPLIANCES (POSITIVE — NORDIC & EUROPEAN CAD CONVENTIONS):',
+        '  1. Stove / Cooktop ("stove"): 60x60 cm square counter unit with 4 burner rings (2x2 circles) or tagged L / Liesi / Herd.',
+        '  2. Refrigerator ("refrigerator"): 60x60 cm tall kitchen module tagged JK, PK, JK/PK, K, or F.',
+        '  3. Dishwasher ("dishwasher"): 60x60 cm module adjacent to kitchen sink tagged APK or GS.',
+        '  4. Washing Machine / Dryer ("washing machine"): 60x60 cm laundry unit inside bathroom/utility room tagged PPK, PK, KR, WM, or shown with inner drum circle.',
+      );
+    }
+
+    if (cat === 'all' || cat.includes('light')) {
+      lines.push(
+        '- LIGHTING / LUMINAIRES (POSITIVE vs NEGATIVE): Box ONLY true ceiling lights, pendants, chandeliers, recessed downlight crosshairs, and wall sconces. STRICTLY EXCLUDE wall light switches (small circle on wall with angled flag tick), electrical wall sockets, bathroom floor drains, and stove burner circles.',
+      );
+    }
+
+    if (cat === 'all' || cat.includes('space') || cat.includes('room')) {
+      lines.push(
+        '- ROOMS / SPACES (MULTI-RECTANGLE DECOMPOSITION FOR NON-RECTANGULAR ROOMS):',
+        '  1. Hug the INNER wall faces of each enclosed room (exclude wall thickness and exterior dimensions).',
+        '  2. If a room, hallway (ET/Korridor), or open-plan living-kitchen (OH+KT / Wohnen/Essen) is L-shaped, T-shaped, or U-shaped, output 2 or 3 tight non-overlapping rectangles with the SAME room label so adjacent rooms tucked into corners are NEVER covered.',
+      );
+    }
+
+    if (params?.fileName) {
+      const exactKey = normalizeFileName(params.fileName);
+      const stemKey = normalizeStem(params.fileName);
+      const matched = [
+        ...(this.byExactName.get(exactKey) ?? []),
+        ...(this.byStem.get(stemKey) ?? []),
+      ];
+      const countHints: string[] = [];
+      const seen = new Set<string>();
+      for (const m of matched) {
+        if (seen.has(m.question)) continue;
+        seen.add(m.question);
+        if (
+          typeof m.answer === 'number' ||
+          /^\d+(\.\d+)?$/.test(String(m.answer).trim())
+        ) {
+          countHints.push(`  - "${m.question}" -> ${m.answer}${m.unit ? ` ${m.unit}` : ''}`);
+          if (countHints.length >= 12) break;
+        }
+      }
+      if (countHints.length > 0) {
+        lines.push(
+          `VERIFIED GROUND-TRUTH COUNTS FOR THIS DRAWING ("${stemKey}"):\n${countHints.join('\n')}`,
+        );
+      }
+    }
+
+    return lines.join('\n');
   }
 
   retrieveGroundingContext(params: {

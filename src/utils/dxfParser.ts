@@ -59,9 +59,19 @@ export interface DxfRoomPolygon {
   pts: Array<{ x: number; y: number }>;
 }
 
+export interface DxfBlockInstance {
+  blockName: string;
+  layer: string;
+  xmin: number;
+  ymin: number;
+  xmax: number;
+  ymax: number;
+}
+
 export interface ParsedDxfResult {
   summary: ParsedDxfSummary;
   primitives: DxfPrimitive[];
+  blockInstances: DxfBlockInstance[];
   roomPolygons: DxfRoomPolygon[];
   viewBox: { x: number; y: number; width: number; height: number };
   svgMarkup: string;
@@ -293,6 +303,7 @@ export function parseDxfFile(text: string): ParsedDxfResult {
   const textItems: Array<{ x: number; y: number; text: string; layer: string }> = [];
   const closedPolys: ClosedPoly[] = [];
   const primitives: DxfPrimitive[] = [];
+  const blockInstances: DxfBlockInstance[] = [];
 
   let minX = Infinity;
   let minY = Infinity;
@@ -426,12 +437,26 @@ export function parseDxfFile(text: string): ParsedDxfResult {
           };
         };
 
+        let bMinX = Infinity;
+        let bMinY = Infinity;
+        let bMaxX = -Infinity;
+        let bMaxY = -Infinity;
+        const expandBlockBox = (bx: number, by: number) => {
+          if (!Number.isFinite(bx) || !Number.isFinite(by)) return;
+          if (bx < bMinX) bMinX = bx;
+          if (by < bMinY) bMinY = by;
+          if (bx > bMaxX) bMaxX = bx;
+          if (by > bMaxY) bMaxY = by;
+        };
+
         if (def && def.length > 0) {
           for (const bp of def) {
             const layer = bp.layer === '0' ? parsed.layer : bp.layer;
             if (bp.kind === 'line') {
               const p1 = xform(bp.x1, bp.y1);
               const p2 = xform(bp.x2, bp.y2);
+              expandBlockBox(p1.x, p1.y);
+              expandBlockBox(p2.x, p2.y);
               trackPrimitive({
                 kind: 'line',
                 layer,
@@ -443,29 +468,37 @@ export function parseDxfFile(text: string): ParsedDxfResult {
               });
             } else if (bp.kind === 'circle') {
               const c = xform(bp.cx, bp.cy);
+              const rScaled = bp.r * Math.max(Math.abs(sx), Math.abs(sy));
+              expandBlockBox(c.x - rScaled, c.y - rScaled);
+              expandBlockBox(c.x + rScaled, c.y + rScaled);
               trackPrimitive({
                 kind: 'circle',
                 layer,
                 blockName: parsed.blockName,
                 cx: c.x,
                 cy: c.y,
-                r: bp.r * Math.max(Math.abs(sx), Math.abs(sy)),
+                r: rScaled,
               });
             } else if (bp.kind === 'arc') {
               const c = xform(bp.cx, bp.cy);
+              const rScaled = bp.r * Math.max(Math.abs(sx), Math.abs(sy));
+              expandBlockBox(c.x - rScaled, c.y - rScaled);
+              expandBlockBox(c.x + rScaled, c.y + rScaled);
               trackPrimitive({
                 kind: 'arc',
                 layer,
                 blockName: parsed.blockName,
                 cx: c.x,
                 cy: c.y,
-                r: bp.r * Math.max(Math.abs(sx), Math.abs(sy)),
+                r: rScaled,
                 startDeg: bp.startDeg + rotDeg,
                 endDeg: bp.endDeg + rotDeg,
               });
             }
           }
         } else {
+          expandBlockBox(tx - 0.25, ty - 0.25);
+          expandBlockBox(tx + 0.25, ty + 0.25);
           trackPrimitive({
             kind: 'circle',
             layer: parsed.layer,
@@ -473,6 +506,17 @@ export function parseDxfFile(text: string): ParsedDxfResult {
             cx: tx,
             cy: ty,
             r: 0.15,
+          });
+        }
+
+        if (Number.isFinite(bMinX) && Number.isFinite(bMaxX)) {
+          blockInstances.push({
+            blockName: parsed.blockName,
+            layer: parsed.layer,
+            xmin: bMinX,
+            ymin: bMinY,
+            xmax: bMaxX,
+            ymax: bMaxY,
           });
         }
       } else {
@@ -666,7 +710,12 @@ export function parseDxfFile(text: string): ParsedDxfResult {
   const safeVbY = Number.isFinite(vbY) ? vbY : 0;
   const safeVbW = Number.isFinite(vbW) && vbW > 0 ? vbW : 100;
   const safeVbH = Number.isFinite(vbH) && vbH > 0 ? vbH : 100;
-  const svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${safeVbX.toFixed(3)} ${safeVbY.toFixed(3)} ${safeVbW.toFixed(3)} ${safeVbH.toFixed(3)}" style="background:#ffffff">${svgParts.join('')}</svg>`;
+  const svgPixelW = 1800;
+  const svgPixelH = Math.max(
+    240,
+    Math.min(4800, Math.round((svgPixelW * safeVbH) / safeVbW)),
+  );
+  const svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" width="${svgPixelW}" height="${svgPixelH}" viewBox="${safeVbX.toFixed(3)} ${safeVbY.toFixed(3)} ${safeVbW.toFixed(3)} ${safeVbH.toFixed(3)}" style="background:#ffffff">${svgParts.join('')}</svg>`;
 
   return {
     summary: {
@@ -696,8 +745,9 @@ export function parseDxfFile(text: string): ParsedDxfResult {
         : null,
     },
     primitives,
+    blockInstances,
     roomPolygons,
-    viewBox: { x: vbX, y: vbY, width: vbW, height: vbH },
+    viewBox: { x: safeVbX, y: safeVbY, width: safeVbW, height: safeVbH },
     svgMarkup,
   };
 }

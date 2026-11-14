@@ -39,6 +39,7 @@ import type {
   DetectedObject,
   FileKind,
   HighlightTarget,
+  Indexed2DElement,
   LoadedAsset,
   ProjectFileEntry,
   RoomMetric,
@@ -117,6 +118,158 @@ function StoaLogo() {
       Stoa
     </span>
   );
+}
+
+const CLIENT_INDEX_SYNONYMS: string[][] = [
+  ['door', 'doors', 'entry door', 'sliding door', 'pocket door', 'double door', 'tuer', 'tür', 'porte', 'ovi'],
+  ['window', 'windows', 'glazing', 'fenster', 'fenetre', 'ikkuna'],
+  ['chair', 'chairs', 'armchair', 'stool', 'seat', 'seating'],
+  ['sofa', 'couch', 'loveseat', 'sectional'],
+  ['bed', 'beds', 'double bed', 'single bed', 'queen bed', 'king bed', 'crib'],
+  ['table', 'tables', 'dining table', 'coffee table', 'desk', 'nightstand', 'island'],
+  ['wardrobe', 'closet', 'cabinet', 'cupboard', 'dresser', 'shelf', 'shelving', 'storage'],
+  ['furniture', 'chair', 'sofa', 'couch', 'bed', 'table', 'desk', 'wardrobe', 'cabinet', 'stool', 'armchair', 'nightstand'],
+  ['sink', 'sinks', 'washbasin', 'basin', 'lavabo'],
+  ['toilet', 'toilets', 'wc', 'commode', 'water closet'],
+  ['shower', 'bathtub', 'tub', 'bath'],
+  ['stove', 'cooktop', 'oven', 'range', 'refrigerator', 'fridge', 'dishwasher', 'washer', 'dryer', 'appliance'],
+  ['lamp', 'lamps', 'light', 'lights', 'luminaire', 'sconce', 'pendant', 'chandelier', 'ceiling light'],
+  ['stair', 'stairs', 'staircase', 'steps'],
+  ['kitchen', 'küche', 'kuche', 'cuisine', 'keittiö'],
+  ['bathroom', 'bath', 'wc', 'restroom', 'lavatory', 'bad', 'kylpyhuone'],
+  ['bedroom', 'master bedroom', 'sleeping', 'schlafzimmer', 'chambre', 'makuuhuone'],
+  ['living', 'living room', 'lounge', 'salon', 'wohnzimmer', 'olohuone'],
+  ['dining', 'dining room'],
+  ['hall', 'hallway', 'corridor', 'entry', 'foyer', 'vestibule', 'flur', 'eteinen'],
+  ['balcony', 'terrace', 'loggia', 'patio', 'porch', 'deck'],
+];
+
+function matchClientSpatialIndex(
+  index: Indexed2DElement[] | undefined,
+  target: HighlightTarget,
+): NonNullable<HighlightTarget['boxes2D']> {
+  if (!index || index.length === 0) return [];
+  const isSpace = target.category === 'Space';
+  const candidates = index.filter((el) =>
+    isSpace ? el.category === 'Space' : el.category !== 'Space',
+  );
+  if (candidates.length === 0) return [];
+
+  const rawTerms = [
+    ...(target.exactNames ?? []),
+    ...(target.keywords ?? []),
+    target.label,
+  ]
+    .map((s) =>
+      s
+        .toLowerCase()
+        .replace(/\(\d+\)/g, '')
+        .replace(/\b(highlight|all|mentioned|items?|objects?|elements?|in|the|of)\b/g, '')
+        .trim(),
+    )
+    .filter((s) => s.length >= 2 && !/^\d+$/.test(s));
+
+  const expanded = new Set<string>();
+  for (const term of rawTerms) {
+    expanded.add(term);
+    if (term.endsWith('s') && term.length >= 4) {
+      expanded.add(term.slice(0, -1));
+    }
+    for (const grp of CLIENT_INDEX_SYNONYMS) {
+      if (
+        grp.some(
+          (g) => g === term || (term.length >= 4 && (g.includes(term) || term.includes(g))),
+        )
+      ) {
+        for (const g of grp) expanded.add(g);
+      }
+    }
+  }
+
+  const excl = (target.excludeKeywords ?? [])
+    .map((e) => e.trim().toLowerCase())
+    .filter((e) => e.length >= 2);
+
+  const matched = candidates.filter((el) => {
+    const lbl = el.label.toLowerCase();
+    const hay = `${lbl} ${el.category.toLowerCase()}`;
+    if (excl.some((ex) => hay.includes(ex))) return false;
+    if (!isSpace && target.category && target.category !== 'All') {
+      if (
+        el.category.toLowerCase() === target.category.toLowerCase() &&
+        (expanded.has('furniture') ||
+          expanded.has('openings') ||
+          expanded.has('lighting') ||
+          expanded.has('plumbing'))
+      ) {
+        return true;
+      }
+    }
+    for (const syn of expanded) {
+      if (
+        lbl === syn ||
+        lbl.includes(syn) ||
+        (lbl.length >= 3 && syn.includes(lbl))
+      ) {
+        return true;
+      }
+    }
+    return false;
+  });
+
+  const boxes = matched.map((m) => ({
+    ymin: m.ymin,
+    xmin: m.xmin,
+    ymax: m.ymax,
+    xmax: m.xmax,
+    label: m.label,
+  }));
+
+  if (
+    !isSpace &&
+    !target.filterDescription &&
+    target.expectedCount &&
+    target.expectedCount > 0 &&
+    boxes.length > target.expectedCount
+  ) {
+    return boxes.slice(0, target.expectedCount);
+  }
+  return boxes;
+}
+
+function enrichAnalysisWithSpatialIndex(
+  analysis: TakeoffAnalysis | null,
+  index: Indexed2DElement[],
+): TakeoffAnalysis | null {
+  if (!analysis || index.length === 0) return analysis;
+  const rooms = (analysis.rooms ?? []).map((r, i) => {
+    if (r.boxes2D && r.boxes2D.length > 0) return r;
+    const matched = matchClientSpatialIndex(index, {
+      id: `room-${i}`,
+      label: r.name,
+      category: 'Space',
+      keywords: [r.name],
+      exactNames: [r.name],
+      expectedCount: 1,
+    });
+    return matched.length > 0 ? { ...r, boxes2D: matched.slice(0, 4) } : r;
+  });
+  const detectedObjects = (analysis.detectedObjects ?? []).map((o, i) => {
+    const matched = matchClientSpatialIndex(index, {
+      id: `obj-${i}`,
+      label: o.name,
+      category:
+        !o.category || o.category === 'Other' ? 'All' : o.category,
+      keywords: [o.name],
+      exactNames: [o.name],
+      expectedCount: o.count > 0 ? o.count : undefined,
+    });
+    if (matched.length > (o.boxes2D?.length ?? 0)) {
+      return { ...o, boxes2D: matched };
+    }
+    return o;
+  });
+  return { ...analysis, rooms, detectedObjects };
 }
 
 function inferFileKind(fileName: string, mimeType: string): FileKind | null {
@@ -228,6 +381,8 @@ function buildFallbackHighlights(
             category: obj.category === 'Other' ? 'All' : obj.category,
             keywords: [oLower, firstWord],
             exactNames: [obj.name],
+            expectedCount: obj.count,
+            filterDescription: `${obj.name} (${obj.count} ${obj.unit || 'items'})`,
             boxes2D: obj.boxes2D,
           });
         }
@@ -489,11 +644,76 @@ export default function App() {
         fileKind: targetAsset.fileKind,
         mimeType: payload2d?.mimeType,
         dataBase64: payload2d?.dataBase64,
+        tiles: payload2d?.tiles,
         structuredSummary: currentSummary,
         calibrationNote: payload2d?.calibrationNote ?? calib ?? undefined,
       };
     },
     [],
+  );
+
+  const indexed2DFilesRef = useRef<Set<string>>(new Set());
+
+  const triggerBackground2DIndex = useCallback(
+    async (fileId: string) => {
+      const entry = projectFilesRef.current.find(
+        (f) => f.asset.id === fileId,
+      );
+      if (!entry) return;
+      if (
+        entry.asset.fileKind === '3d-ifc' ||
+        entry.asset.fileKind === '3d-mesh'
+      ) {
+        return;
+      }
+      if (entry.spatialIndex2D && entry.spatialIndex2D.length > 0) return;
+
+      const pageTag =
+        typeof entry.parsedSummary?.page === 'number'
+          ? String(entry.parsedSummary.page)
+          : '1';
+      const dedupeKey = `${fileId}::${pageTag}`;
+      if (indexed2DFilesRef.current.has(dedupeKey)) return;
+      indexed2DFilesRef.current.add(dedupeKey);
+
+      try {
+        const imgPayload = await viewport2DRef.current?.captureImagePayload();
+        if (!imgPayload?.dataBase64 || !imgPayload?.mimeType) {
+          indexed2DFilesRef.current.delete(dedupeKey);
+          return;
+        }
+        const resp = await fetch('/api/index-2d', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileName: entry.asset.name,
+            mimeType: imgPayload.mimeType,
+            dataBase64: imgPayload.dataBase64,
+            tiles: imgPayload.tiles,
+          }),
+        });
+        const data = await readJsonResponse<{
+          elements?: Indexed2DElement[];
+        }>(resp);
+        if (
+          resp.ok &&
+          Array.isArray(data.elements) &&
+          data.elements.length > 0
+        ) {
+          const indexed = data.elements;
+          updateEntry(fileId, (prev) => ({
+            ...prev,
+            spatialIndex2D: indexed,
+            analysis: enrichAnalysisWithSpatialIndex(prev.analysis, indexed),
+          }));
+        } else {
+          indexed2DFilesRef.current.delete(dedupeKey);
+        }
+      } catch {
+        indexed2DFilesRef.current.delete(dedupeKey);
+      }
+    },
+    [updateEntry],
   );
 
   const runAnalysis = useCallback(
@@ -520,18 +740,29 @@ export default function App() {
         const data = await readJsonResponse<{
           analysis?: TakeoffAnalysis;
           matchedGroundTruth?: ProjectFileEntry['matchedGroundTruth'];
+          spatialIndex2D?: Indexed2DElement[];
           error?: string;
         }>(resp);
         if (!resp.ok || !data.analysis) {
           throw new Error(data.error || 'Analysis failed.');
         }
-        updateEntry(entry.asset.id, (prev) => ({
-          ...prev,
-          analysis: data.analysis!,
-          matchedGroundTruth: Array.isArray(data.matchedGroundTruth)
-            ? data.matchedGroundTruth
-            : prev.matchedGroundTruth,
-        }));
+        updateEntry(entry.asset.id, (prev) => {
+          const nextIndex =
+            Array.isArray(data.spatialIndex2D) && data.spatialIndex2D.length > 0
+              ? data.spatialIndex2D
+              : prev.spatialIndex2D;
+          const mergedAnalysis = nextIndex
+            ? enrichAnalysisWithSpatialIndex(data.analysis!, nextIndex)
+            : data.analysis!;
+          return {
+            ...prev,
+            analysis: mergedAnalysis,
+            spatialIndex2D: nextIndex,
+            matchedGroundTruth: Array.isArray(data.matchedGroundTruth)
+              ? data.matchedGroundTruth
+              : prev.matchedGroundTruth,
+          };
+        });
         setActiveTab('takeoff');
       } catch (err) {
         setErrorMsg(err instanceof Error ? err.message : 'Analysis failed.');
@@ -634,15 +865,153 @@ export default function App() {
       setActiveHighlight(null);
       return;
     }
-    setActiveHighlight(target);
 
-    // For 2D raster/SVG images without pre-computed boxes2D, locate exact matching subset live
-    if (
-      asset &&
-      (asset.fileKind === '2d-image' || asset.fileKind === '2d-svg') &&
-      (!target.boxes2D || target.boxes2D.length === 0)
-    ) {
-      setLocatingHighlightId(target.id);
+    if (!asset || is3D) {
+      setActiveHighlight(target);
+      return;
+    }
+
+    const currentFileId = asset.id;
+    const currentIndex =
+      projectFilesRef.current.find((f) => f.asset.id === currentFileId)
+        ?.spatialIndex2D ?? activeEntry?.spatialIndex2D;
+
+    // Step 1: Synchronously hydrate missing boxes2D in 0ms from pre-indexed spatialIndex2D
+    const hydrateSingleLocally = (t: HighlightTarget): HighlightTarget => {
+      if (t.boxes2D && t.boxes2D.length > 0) return t;
+      const localMatches = matchClientSpatialIndex(currentIndex, t);
+      if (localMatches.length === 0) return t;
+      // If a specific positional subset is requested (e.g. "2 doors in hallway") and local index matched more, let /api/locate-2d refine it
+      if (
+        t.filterDescription &&
+        t.expectedCount &&
+        t.expectedCount > 0 &&
+        localMatches.length > t.expectedCount
+      ) {
+        return t;
+      }
+      return { ...t, boxes2D: localMatches };
+    };
+
+    let hydratedTarget: HighlightTarget = target;
+    if (target.subTargets && target.subTargets.length > 0) {
+      const nextSubs = target.subTargets.map(hydrateSingleLocally);
+      const merged = nextSubs.flatMap((s) => s.boxes2D ?? []);
+      hydratedTarget = {
+        ...target,
+        subTargets: nextSubs,
+        boxes2D: merged.length > 0 ? merged : target.boxes2D,
+      };
+    } else {
+      hydratedTarget = hydrateSingleLocally(target);
+    }
+
+    setActiveHighlight(hydratedTarget);
+
+    // Step 2: Only request /api/locate-2d when boxes2D are still empty OR a positional subset needs disambiguation
+    const needsRemoteLocate = (t: HighlightTarget): boolean => {
+      const existing = t.boxes2D ?? [];
+      if (existing.length === 0) return true;
+      if (
+        Boolean(t.filterDescription) &&
+        t.category !== 'Space' &&
+        t.expectedCount &&
+        t.expectedCount > 0 &&
+        existing.length > t.expectedCount
+      ) {
+        return true;
+      }
+      return false;
+    };
+
+    // Case 1: "All Mentioned" composite target with subTargets
+    if (hydratedTarget.subTargets && hydratedTarget.subTargets.length > 0) {
+      const missingSubs = hydratedTarget.subTargets.filter(needsRemoteLocate);
+      if (missingSubs.length === 0) return;
+
+      setLocatingHighlightId(hydratedTarget.id);
+      try {
+        const imgPayload = await viewport2DRef.current?.captureImagePayload();
+        if (!imgPayload?.dataBase64 || !imgPayload?.mimeType) return;
+
+        const locatedMap = new Map<
+          string,
+          NonNullable<HighlightTarget['boxes2D']>
+        >();
+        await Promise.all(
+          missingSubs.map(async (sub) => {
+            try {
+              const resp = await fetch('/api/locate-2d', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  fileName: asset.name,
+                  label: sub.label,
+                  category: sub.category,
+                  keywords: sub.keywords,
+                  filterDescription: sub.filterDescription,
+                  expectedCount: sub.expectedCount,
+                  answerContext,
+                  mimeType: imgPayload.mimeType,
+                  dataBase64: imgPayload.dataBase64,
+                  tiles: imgPayload.tiles,
+                }),
+              });
+              const data = await readJsonResponse<{
+                boxes2D?: HighlightTarget['boxes2D'];
+              }>(resp);
+              if (
+                resp.ok &&
+                Array.isArray(data.boxes2D) &&
+                data.boxes2D.length > 0
+              ) {
+                locatedMap.set(sub.id, data.boxes2D);
+              }
+            } catch {
+              // Non-blocking per sub-target
+            }
+          }),
+        );
+
+        if (locatedMap.size > 0) {
+          const updatedSubs = hydratedTarget.subTargets.map((sub) =>
+            locatedMap.has(sub.id)
+              ? { ...sub, boxes2D: locatedMap.get(sub.id) }
+              : sub,
+          );
+          const mergedBoxes = updatedSubs.flatMap((s) => s.boxes2D ?? []);
+
+          setActiveHighlight((curr) =>
+            curr && curr.id === hydratedTarget.id
+              ? { ...curr, subTargets: updatedSubs, boxes2D: mergedBoxes }
+              : curr,
+          );
+
+          updateEntry(currentFileId, (prev) => ({
+            ...prev,
+            chatMessages: prev.chatMessages.map((m) =>
+              m.highlights
+                ? {
+                    ...m,
+                    highlights: m.highlights.map((h) =>
+                      locatedMap.has(h.id)
+                        ? { ...h, boxes2D: locatedMap.get(h.id) }
+                        : h,
+                    ),
+                  }
+                : m,
+            ),
+          }));
+        }
+      } finally {
+        setLocatingHighlightId(null);
+      }
+      return;
+    }
+
+    // Case 2: Single room or object highlight target across any 2D blueprint format (PNG/JPG/SVG/DXF/PDF)
+    if (needsRemoteLocate(hydratedTarget)) {
+      setLocatingHighlightId(hydratedTarget.id);
       try {
         const imgPayload = await viewport2DRef.current?.captureImagePayload();
         if (imgPayload?.dataBase64 && imgPayload?.mimeType) {
@@ -651,24 +1020,71 @@ export default function App() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               fileName: asset.name,
-              label: target.label,
-              keywords: target.keywords,
-              filterDescription: target.filterDescription,
-              expectedCount: target.expectedCount,
+              label: hydratedTarget.label,
+              category: hydratedTarget.category,
+              keywords: hydratedTarget.keywords,
+              filterDescription: hydratedTarget.filterDescription,
+              expectedCount: hydratedTarget.expectedCount,
               answerContext,
               mimeType: imgPayload.mimeType,
               dataBase64: imgPayload.dataBase64,
+              tiles: imgPayload.tiles,
             }),
           });
           const data = await readJsonResponse<{
             boxes2D?: HighlightTarget['boxes2D'];
           }>(resp);
-          if (resp.ok && Array.isArray(data.boxes2D) && data.boxes2D.length > 0) {
+          const locatedBoxes = data.boxes2D;
+          if (resp.ok && Array.isArray(locatedBoxes) && locatedBoxes.length > 0) {
             setActiveHighlight((curr) =>
-              curr && curr.id === target.id
-                ? { ...curr, boxes2D: data.boxes2D }
+              curr && curr.id === hydratedTarget.id
+                ? { ...curr, boxes2D: locatedBoxes }
                 : curr,
             );
+
+            // Cache located boxes2D into project state so re-clicking is 0ms
+            updateEntry(currentFileId, (prev) => {
+              let nextAnalysis = prev.analysis;
+              if (nextAnalysis) {
+                const roomMatch = hydratedTarget.id.match(/^takeoff-room-(\d+)-/);
+                const objMatch = hydratedTarget.id.match(/^takeoff-obj-(\d+)-/);
+                if (roomMatch) {
+                  const rIdx = Number(roomMatch[1]);
+                  nextAnalysis = {
+                    ...nextAnalysis,
+                    rooms: (nextAnalysis.rooms ?? []).map((r, i) =>
+                      i === rIdx ? { ...r, boxes2D: locatedBoxes } : r,
+                    ),
+                  };
+                } else if (objMatch) {
+                  nextAnalysis = {
+                    ...nextAnalysis,
+                    detectedObjects: (nextAnalysis.detectedObjects ?? []).map(
+                      (o) =>
+                        o.name === hydratedTarget.exactNames?.[0]
+                          ? { ...o, boxes2D: locatedBoxes }
+                          : o,
+                    ),
+                  };
+                }
+              }
+              return {
+                ...prev,
+                analysis: nextAnalysis,
+                chatMessages: prev.chatMessages.map((m) =>
+                  m.highlights
+                    ? {
+                        ...m,
+                        highlights: m.highlights.map((h) =>
+                          h.id === hydratedTarget.id
+                            ? { ...h, boxes2D: locatedBoxes }
+                            : h,
+                        ),
+                      }
+                    : m,
+                ),
+              };
+            });
           }
         }
       } catch {
@@ -1119,10 +1535,21 @@ export default function App() {
 
       const formattedAnswer = formatCleanAnswer(String(data.answer ?? ''));
 
-      const effectiveHighlights =
+      const currentIndex =
+        projectFilesRef.current.find((f) => f.asset.id === currentId)
+          ?.spatialIndex2D ?? activeEntry.spatialIndex2D;
+
+      const baseHighlights =
         rawHighlights.length > 0
           ? rawHighlights
           : buildFallbackHighlights(formattedAnswer, activeEntry.analysis);
+
+      const effectiveHighlights = baseHighlights.map((hl) => {
+        if (hl.boxes2D && hl.boxes2D.length > 0) return hl;
+        if (hl.filterDescription) return hl;
+        const matched = matchClientSpatialIndex(currentIndex, hl);
+        return matched.length > 0 ? { ...hl, boxes2D: matched } : hl;
+      });
 
       updateEntry(currentId, (prev) => ({
         ...prev,
@@ -1592,6 +2019,10 @@ export default function App() {
                 ref={viewport2DRef}
                 asset={asset}
                 activeHighlight={activeHighlight}
+                locating={
+                  locatingHighlightId !== null &&
+                  locatingHighlightId === activeHighlight?.id
+                }
                 onClearHighlight={() => setActiveHighlight(null)}
                 onParsedSummary={(s) =>
                   updateEntry(asset.id, (prev) => ({ ...prev, parsedSummary: s }))
@@ -1602,6 +2033,9 @@ export default function App() {
                     calibrationNote: note,
                   }))
                 }
+                onImageReady={() => {
+                  void triggerBackground2DIndex(asset.id);
+                }}
               />
             )}
           </div>
@@ -2349,7 +2783,12 @@ export default function App() {
                                               : 'bg-[#FDF6EC] text-[#9A4E15] border-[#EED6B5] hover:bg-[#F9EBD6]'
                                           }`}
                                         >
-                                          <Crosshair className="w-3 h-3" />
+                                          {locatingHighlightId ===
+                                          mergedAll.id ? (
+                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                          ) : (
+                                            <Crosshair className="w-3 h-3" />
+                                          )}
                                           {activeHighlight?.id === mergedAll.id
                                             ? 'Highlighting All'
                                             : mergedAll.label}

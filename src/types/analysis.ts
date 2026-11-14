@@ -282,6 +282,25 @@ export interface LoadedAsset {
   structuredSummary?: Record<string, unknown>;
 }
 
+export interface SpatialTilePayload {
+  id: string;
+  x0: number; // 0..1000 global left
+  y0: number; // 0..1000 global top
+  x1: number; // 0..1000 global right
+  y1: number; // 0..1000 global bottom
+  mimeType: string;
+  dataBase64: string;
+}
+
+export interface Indexed2DElement {
+  ymin: number;
+  xmin: number;
+  ymax: number;
+  xmax: number;
+  category: string;
+  label: string;
+}
+
 export interface ProjectFileEntry {
   asset: LoadedAsset;
   parsedSummary: Record<string, unknown>;
@@ -289,5 +308,6 @@ export interface ProjectFileEntry {
   chatMessages: ChatMessage[];
   matchedGroundTruth: GroundTruthQA[];
   calibrationNote: string | null;
+  spatialIndex2D?: Indexed2DElement[];
   addedAt: string;
 }

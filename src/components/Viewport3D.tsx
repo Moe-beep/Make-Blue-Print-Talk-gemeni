@@ -348,7 +348,7 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Viewport3DProps>(
       );
       renderer.setSize(width, height);
       renderer.shadowMap.enabled = !isSoftwareGl;
-      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.shadowMap.type = THREE.PCFShadowMap;
       container.appendChild(renderer.domElement);
 
       const scene = new THREE.Scene();
@@ -385,6 +385,7 @@ export const Viewport3D = forwardRef<Viewport3DHandle, Viewport3DProps>(
       keyLight.position.set(18, 28, 16);
       keyLight.castShadow = !isSoftwareGl;
       keyLight.shadow.mapSize.set(1024, 1024);
+      keyLight.shadow.radius = 2;
       keyLight.shadow.bias = -0.0005;
       keyLight.shadow.normalBias = 0.02;
       scene.add(keyLight);

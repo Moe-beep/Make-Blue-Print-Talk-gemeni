@@ -233,37 +233,70 @@ export const Viewport2D = forwardRef<Viewport2DHandle, Viewport2DProps>(
           };
         }
 
-        const srcUrl = renderedSvgUrl || asset.previewUrl;
+        let tempObjectUrl: string | null = null;
+        let srcUrl = renderedSvgUrl || asset.previewUrl || null;
+
+        if (!srcUrl && asset.rawText) {
+          if (asset.fileKind === '2d-dxf') {
+            const svgStr = svgMarkupStr ?? parseDxfFile(asset.rawText).svgMarkup;
+            tempObjectUrl = URL.createObjectURL(
+              new Blob([svgStr], { type: 'image/svg+xml' }),
+            );
+            srcUrl = tempObjectUrl;
+          } else if (asset.fileKind === '2d-svg') {
+            tempObjectUrl = URL.createObjectURL(
+              new Blob([asset.rawText], { type: 'image/svg+xml' }),
+            );
+            srcUrl = tempObjectUrl;
+          }
+        }
+
         if (!srcUrl) return null;
 
         return new Promise((resolve) => {
+          const cleanup = () => {
+            if (tempObjectUrl) {
+              URL.revokeObjectURL(tempObjectUrl);
+              tempObjectUrl = null;
+            }
+          };
           const img = new Image();
           img.crossOrigin = 'anonymous';
           img.onload = () => {
-            const maxSide = 2400;
-            const w = img.naturalWidth || 1600;
-            const h = img.naturalHeight || 1200;
-            const scale = Math.min(1, maxSide / Math.max(w, h));
-            const canvas = document.createElement('canvas');
-            canvas.width = Math.max(1, Math.round(w * scale));
-            canvas.height = Math.max(1, Math.round(h * scale));
-            const ctx = canvas.getContext('2d');
-            if (!ctx) {
-              resolve(null);
-              return;
-            }
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            try {
+              const maxSide = 2400;
+              const w = img.naturalWidth || 1600;
+              const h = img.naturalHeight || 1200;
+              const scale = Math.min(1, maxSide / Math.max(w, h));
+              const canvas = document.createElement('canvas');
+              canvas.width = Math.max(1, Math.round(w * scale));
+              canvas.height = Math.max(1, Math.round(h * scale));
+              const ctx = canvas.getContext('2d');
+              if (!ctx) {
+                cleanup();
+                resolve(null);
+                return;
+              }
+              ctx.fillStyle = '#ffffff';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-            const dataUrl = canvas.toDataURL('image/png');
-            resolve({
-              mimeType: 'image/png',
-              dataBase64: dataUrl.replace(/^data:image\/png;base64,/, ''),
-              calibrationNote: calibrationNote ?? undefined,
-            });
+              const dataUrl = canvas.toDataURL('image/png');
+              cleanup();
+              resolve({
+                mimeType: 'image/png',
+                dataBase64: dataUrl.replace(/^data:image\/png;base64,/, ''),
+                calibrationNote: calibrationNote ?? undefined,
+              });
+            } catch {
+              cleanup();
+              resolve(null);
+            }
           };
-          img.onerror = () => resolve(null);
+          img.onerror = () => {
+            cleanup();
+            resolve(null);
+          };
           img.src = srcUrl;
         });
       },

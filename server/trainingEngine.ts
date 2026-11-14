@@ -213,7 +213,7 @@ class TrainingEngine {
 
   ingestTrainingPayload(
     rawText: string,
-    defaultFileName = 'uploaded-questions.json',
+    defaultFileName = 'training-batch.json',
   ): { addedCount: number; totalCustom: number } {
     const trimmed = rawText.trim();
     if (!trimmed) {

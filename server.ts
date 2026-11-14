@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
-import type { Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -227,81 +227,184 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+function toFiniteOrNull(val: unknown): number | null {
+  return typeof val === 'number' && Number.isFinite(val) ? val : null;
+}
+
+function parseJsonObjectSafe(rawInput: string): Record<string, unknown> {
+  const unfenced = rawInput
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  try {
+    const parsed = JSON.parse(unfenced);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    const first = unfenced.indexOf('{');
+    const last = unfenced.lastIndexOf('}');
+    if (first !== -1 && last > first) {
+      const parsed = JSON.parse(unfenced.slice(first, last + 1));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    }
+  }
+  return {};
+}
+
 function reconcileAndVerifyAnalysis(
   rawAnalysis: Record<string, unknown>,
   fileKind: string,
 ): Record<string, unknown> {
   const analysis = structuredClone(rawAnalysis) as {
+    sceneType?: string;
+    summary?: string;
+    scaleAndCalibration?: string;
     dimensions?: {
-      totalAreaSqM: number | null;
-      totalAreaSqFt: number | null;
-      totalAreaEvidence: string;
-      printedLivingAreaSqM: number | null;
-      printedTotalAreaSqM: number | null;
-      sumInteriorRoomsSqM: number | null;
-      sumExteriorSpacesSqM: number | null;
-      calculatedInteriorPlusExteriorSqM: number | null;
-      grossFootprintAreaSqM: number | null;
-      grossFootprintEvidence: string;
-      footprintDimensionsText: string;
-      estimatedCeilingHeightM: number | null;
-      ceilingHeightEvidence: string;
-      estimatedVolumeCuM: number | null;
-      volumeEvidence: string;
-      footprintSummary: string;
+      totalAreaSqM?: number | null;
+      totalAreaSqFt?: number | null;
+      totalAreaEvidence?: string;
+      printedLivingAreaSqM?: number | null;
+      printedTotalAreaSqM?: number | null;
+      sumInteriorRoomsSqM?: number | null;
+      sumExteriorSpacesSqM?: number | null;
+      calculatedInteriorPlusExteriorSqM?: number | null;
+      grossFootprintAreaSqM?: number | null;
+      grossFootprintEvidence?: string;
+      footprintDimensionsText?: string;
+      estimatedCeilingHeightM?: number | null;
+      ceilingHeightEvidence?: string;
+      estimatedVolumeCuM?: number | null;
+      volumeEvidence?: string;
+      footprintSummary?: string;
     };
     rooms?: Array<{
-      name: string;
-      labelInDrawing: string;
+      name?: string;
+      labelInDrawing?: string;
       isExteriorOrPorch?: boolean;
-      estimatedAreaSqM: number | null;
-      estimatedAreaSqFt: number | null;
-      areaEvidence: string;
-      dimensionsText: string;
-      dimensionsEvidence: string;
-      notes: string;
+      estimatedAreaSqM?: number | null;
+      estimatedAreaSqFt?: number | null;
+      areaEvidence?: string;
+      dimensionsText?: string;
+      dimensionsEvidence?: string;
+      notes?: string;
+      boxes2D?: unknown[];
+    }>;
+    detectedObjects?: Array<{
+      category?: string;
+      name?: string;
+      count?: number;
+      unit?: string;
+      evidence?: string;
+      confidence?: string;
+      locationsOrNotes?: string;
+      boxes2D?: unknown[];
     }>;
     discrepanciesAndUncertainties?: string[];
+    datasetPatternsApplied?: string[];
   };
 
-  const rooms = Array.isArray(analysis.rooms) ? analysis.rooms : [];
-  const dims = analysis.dimensions ?? ({} as NonNullable<typeof analysis.dimensions>);
+  const rawRooms = Array.isArray(analysis.rooms) ? analysis.rooms : [];
+  const rawObjects = Array.isArray(analysis.detectedObjects)
+    ? analysis.detectedObjects
+    : [];
+  const rawDims = analysis.dimensions ?? {};
+
+  const dims = {
+    totalAreaSqM: toFiniteOrNull(rawDims.totalAreaSqM),
+    totalAreaSqFt: toFiniteOrNull(rawDims.totalAreaSqFt),
+    totalAreaEvidence: String(rawDims.totalAreaEvidence || 'Unknown'),
+    printedLivingAreaSqM: toFiniteOrNull(rawDims.printedLivingAreaSqM),
+    printedTotalAreaSqM: toFiniteOrNull(rawDims.printedTotalAreaSqM),
+    sumInteriorRoomsSqM: toFiniteOrNull(rawDims.sumInteriorRoomsSqM),
+    sumExteriorSpacesSqM: toFiniteOrNull(rawDims.sumExteriorSpacesSqM),
+    calculatedInteriorPlusExteriorSqM: toFiniteOrNull(
+      rawDims.calculatedInteriorPlusExteriorSqM,
+    ),
+    grossFootprintAreaSqM: toFiniteOrNull(rawDims.grossFootprintAreaSqM),
+    grossFootprintEvidence: String(rawDims.grossFootprintEvidence || 'Unknown'),
+    footprintDimensionsText: String(
+      rawDims.footprintDimensionsText || 'Not printed',
+    ),
+    estimatedCeilingHeightM: toFiniteOrNull(rawDims.estimatedCeilingHeightM),
+    ceilingHeightEvidence: String(rawDims.ceilingHeightEvidence || 'Unknown'),
+    estimatedVolumeCuM: toFiniteOrNull(rawDims.estimatedVolumeCuM),
+    volumeEvidence: String(rawDims.volumeEvidence || 'Unknown'),
+    footprintSummary: String(rawDims.footprintSummary || ''),
+  };
+
   const discrepancies = new Set<string>(
     Array.isArray(analysis.discrepanciesAndUncertainties)
       ? analysis.discrepanciesAndUncertainties
+          .filter((item): item is string => typeof item === 'string' && Boolean(item.trim()))
       : [],
   );
 
-  // Sync m² <-> ft² per room
+  // Sync m² <-> ft² per room and guarantee non-undefined fields
   let interiorSum = 0;
   let hasInterior = false;
   let exteriorSum = 0;
   let hasExterior = false;
 
-  for (const r of rooms) {
-    if (
-      typeof r.estimatedAreaSqM === 'number' &&
-      Number.isFinite(r.estimatedAreaSqM)
-    ) {
-      r.estimatedAreaSqM = round2(r.estimatedAreaSqM);
-      r.estimatedAreaSqFt = round2(r.estimatedAreaSqM * SQM_TO_SQFT);
-    } else if (
-      typeof r.estimatedAreaSqFt === 'number' &&
-      Number.isFinite(r.estimatedAreaSqFt)
-    ) {
-      r.estimatedAreaSqM = round2(r.estimatedAreaSqFt / SQM_TO_SQFT);
-      r.estimatedAreaSqFt = round2(r.estimatedAreaSqFt);
+  const rooms = rawRooms.map((r, idx) => {
+    let sqM = toFiniteOrNull(r?.estimatedAreaSqM);
+    let sqFt = toFiniteOrNull(r?.estimatedAreaSqFt);
+    if (sqM !== null) {
+      sqM = round2(sqM);
+      sqFt = round2(sqM * SQM_TO_SQFT);
+    } else if (sqFt !== null) {
+      sqM = round2(sqFt / SQM_TO_SQFT);
+      sqFt = round2(sqFt);
     }
-
-    if (typeof r.estimatedAreaSqM === 'number') {
-      if (r.isExteriorOrPorch) {
-        exteriorSum += r.estimatedAreaSqM;
+    const isExt = Boolean(r?.isExteriorOrPorch);
+    if (sqM !== null) {
+      if (isExt) {
+        exteriorSum += sqM;
         hasExterior = true;
       } else {
-        interiorSum += r.estimatedAreaSqM;
+        interiorSum += sqM;
         hasInterior = true;
       }
     }
+    return {
+      name: String(r?.name || `Space ${idx + 1}`),
+      labelInDrawing: String(r?.labelInDrawing || r?.name || ''),
+      isExteriorOrPorch: isExt,
+      estimatedAreaSqM: sqM,
+      estimatedAreaSqFt: sqFt,
+      areaEvidence: String(r?.areaEvidence || 'Unknown'),
+      dimensionsText: String(r?.dimensionsText || 'Not printed'),
+      dimensionsEvidence: String(r?.dimensionsEvidence || 'Unknown'),
+      notes: String(r?.notes || ''),
+      ...(Array.isArray(r?.boxes2D) ? { boxes2D: r.boxes2D } : {}),
+    };
+  });
+
+  const detectedObjects = rawObjects.map((o, idx) => ({
+    category: String(o?.category || 'Other'),
+    name: String(o?.name || `Object ${idx + 1}`),
+    count:
+      typeof o?.count === 'number' && Number.isFinite(o.count)
+        ? Math.max(0, Math.round(o.count))
+        : 0,
+    unit: String(o?.unit || 'count'),
+    evidence: String(o?.evidence || 'Estimated'),
+    confidence: String(o?.confidence || 'Medium'),
+    locationsOrNotes: String(o?.locationsOrNotes || ''),
+    ...(Array.isArray(o?.boxes2D) ? { boxes2D: o.boxes2D } : {}),
+  }));
+
+  if (dims.printedLivingAreaSqM !== null) {
+    dims.printedLivingAreaSqM = round2(dims.printedLivingAreaSqM);
+  }
+  if (dims.printedTotalAreaSqM !== null) {
+    dims.printedTotalAreaSqM = round2(dims.printedTotalAreaSqM);
+  }
+  if (dims.grossFootprintAreaSqM !== null) {
+    dims.grossFootprintAreaSqM = round2(dims.grossFootprintAreaSqM);
   }
 
   if (hasInterior) {
@@ -318,8 +421,8 @@ function reconcileAndVerifyAnalysis(
 
   // Flag printed vs summed discrepancies automatically if > 0.05 m²
   if (
-    typeof dims.printedLivingAreaSqM === 'number' &&
-    typeof dims.sumInteriorRoomsSqM === 'number'
+    dims.printedLivingAreaSqM !== null &&
+    dims.sumInteriorRoomsSqM !== null
   ) {
     const diff = Math.abs(dims.printedLivingAreaSqM - dims.sumInteriorRoomsSqM);
     if (diff > 0.05) {
@@ -329,8 +432,8 @@ function reconcileAndVerifyAnalysis(
     }
   }
   if (
-    typeof dims.printedTotalAreaSqM === 'number' &&
-    typeof dims.calculatedInteriorPlusExteriorSqM === 'number'
+    dims.printedTotalAreaSqM !== null &&
+    dims.calculatedInteriorPlusExteriorSqM !== null
   ) {
     const diff = Math.abs(
       dims.printedTotalAreaSqM - dims.calculatedInteriorPlusExteriorSqM,
@@ -353,27 +456,36 @@ function reconcileAndVerifyAnalysis(
     dims.ceilingHeightEvidence = 'Unknown';
     dims.estimatedVolumeCuM = null;
     dims.volumeEvidence = 'Unknown';
+  } else {
+    dims.estimatedCeilingHeightM = round2(dims.estimatedCeilingHeightM);
+    if (dims.estimatedVolumeCuM !== null) {
+      dims.estimatedVolumeCuM = round2(dims.estimatedVolumeCuM);
+    }
   }
 
   // Ensure totalAreaSqFt matches totalAreaSqM
-  if (
-    typeof dims.totalAreaSqM === 'number' &&
-    Number.isFinite(dims.totalAreaSqM)
-  ) {
+  if (dims.totalAreaSqM !== null) {
     dims.totalAreaSqM = round2(dims.totalAreaSqM);
     dims.totalAreaSqFt = round2(dims.totalAreaSqM * SQM_TO_SQFT);
-  } else if (
-    typeof dims.totalAreaSqFt === 'number' &&
-    Number.isFinite(dims.totalAreaSqFt)
-  ) {
+  } else if (dims.totalAreaSqFt !== null) {
     dims.totalAreaSqM = round2(dims.totalAreaSqFt / SQM_TO_SQFT);
     dims.totalAreaSqFt = round2(dims.totalAreaSqFt);
   }
 
-  analysis.dimensions = dims;
-  analysis.rooms = rooms;
-  analysis.discrepanciesAndUncertainties = Array.from(discrepancies);
-  return analysis as Record<string, unknown>;
+  return {
+    sceneType: String(analysis.sceneType || 'Architectural Drawing / Model'),
+    summary: String(analysis.summary || 'Spatial takeoff completed.'),
+    scaleAndCalibration: String(analysis.scaleAndCalibration || ''),
+    dimensions: dims,
+    rooms,
+    detectedObjects,
+    discrepanciesAndUncertainties: Array.from(discrepancies),
+    datasetPatternsApplied: Array.isArray(analysis.datasetPatternsApplied)
+      ? analysis.datasetPatternsApplied.filter(
+          (p): p is string => typeof p === 'string',
+        )
+      : [],
+  };
 }
 
 const EVIDENCE_DESCRIPTION =
@@ -741,7 +853,7 @@ const LOCATE_2D_SCHEMA = {
   required: ['boxes2D'],
 };
 
-function getAiClient(): GoogleGenAI {
+function getAiClient(apiVersion?: string): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error(
@@ -750,7 +862,9 @@ function getAiClient(): GoogleGenAI {
   }
   return new GoogleGenAI({
     apiKey,
+    ...(apiVersion ? { apiVersion } : {}),
     httpOptions: {
+      ...(apiVersion ? { apiVersion } : {}),
       headers: {
         'User-Agent': 'aistudio-build',
       },
@@ -822,12 +936,12 @@ async function startServer() {
         fileName?: string;
       };
       if (!rawText) {
-        res.status(400).json({ error: 'rawText of questions JSON/JSONL is required.' });
+        res.status(400).json({ error: 'rawText training payload is required.' });
         return;
       }
       const result = trainingEngine.ingestTrainingPayload(
         rawText,
-        fileName || 'questions.json',
+        fileName || 'training-batch.json',
       );
       res.json({
         ...result,
@@ -967,7 +1081,7 @@ async function startServer() {
       });
 
       const rawText = (response.text ?? '{}').trim();
-      const parsedAnalysis = JSON.parse(rawText) as Record<string, unknown>;
+      const parsedAnalysis = parseJsonObjectSafe(rawText);
       const verifiedAnalysis = reconcileAndVerifyAnalysis(
         parsedAnalysis,
         fileKind,
@@ -1276,12 +1390,8 @@ STRICT RULE:
           responseSchema: LOCATE_2D_SCHEMA,
         },
       });
-      const rawLoc = (response.text ?? '{"boxes2D":[]}')
-        .trim()
-        .replace(/^```(?:json)?\s*/i, '')
-        .replace(/\s*```$/i, '')
-        .trim();
-      const parsed = JSON.parse(rawLoc);
+      const rawLoc = response.text ?? '{"boxes2D":[]}';
+      const parsed = parseJsonObjectSafe(rawLoc);
       let boxes = Array.isArray(parsed.boxes2D) ? parsed.boxes2D : [];
       if (expectedCount && expectedCount > 0 && boxes.length > expectedCount) {
         boxes = boxes.slice(0, expectedCount);
@@ -1296,19 +1406,21 @@ STRICT RULE:
 
   let cachedElevenLabsVoiceId: string | null = null;
 
-  function getElevenLabsApiKey(): string {
+  function getOptionalElevenLabsApiKey(): string | null {
     const key = process.env.ELEVENLABS_API_KEY?.trim();
-    if (!key) {
-      throw new Error(
-        'ELEVENLABS_API_KEY is not configured. Please add it in Settings > Secrets.',
-      );
+    if (
+      !key ||
+      key === 'MY_ELEVENLABS_API_KEY' ||
+      key === 'YOUR_ELEVENLABS_API_KEY'
+    ) {
+      return null;
     }
     return key;
   }
 
-  async function resolveElevenLabsVoiceId(apiKey: string): Promise<string> {
+  async function resolveElevenLabsVoiceId(): Promise<string> {
     const envVoice = process.env.ELEVENLABS_VOICE_ID?.trim();
-    if (envVoice) return envVoice;
+    if (envVoice && envVoice !== 'EXAVITQu4vr4xnSDxMaL') return envVoice;
     if (cachedElevenLabsVoiceId) return cachedElevenLabsVoiceId;
     return 'EXAVITQu4vr4xnSDxMaL'; // Sarah (English default)
   }
@@ -1345,10 +1457,41 @@ STRICT RULE:
     }
   }
 
+  function pcm16ToWavBuffer(pcmBytes: Buffer, sampleRate = 24000): Buffer {
+    if (
+      pcmBytes.length >= 12 &&
+      pcmBytes.subarray(0, 4).toString('ascii') === 'RIFF' &&
+      pcmBytes.subarray(8, 12).toString('ascii') === 'WAVE'
+    ) {
+      return pcmBytes;
+    }
+    const header = Buffer.alloc(44);
+    const numChannels = 1;
+    const bitsPerSample = 16;
+    const byteRate = (sampleRate * numChannels * bitsPerSample) / 8;
+    const blockAlign = (numChannels * bitsPerSample) / 8;
+    header.write('RIFF', 0);
+    header.writeUInt32LE(36 + pcmBytes.length, 4);
+    header.write('WAVE', 8);
+    header.write('fmt ', 12);
+    header.writeUInt32LE(16, 16);
+    header.writeUInt16LE(1, 20);
+    header.writeUInt16LE(numChannels, 22);
+    header.writeUInt32LE(sampleRate, 24);
+    header.writeUInt32LE(byteRate, 28);
+    header.writeUInt16LE(blockAlign, 32);
+    header.writeUInt16LE(bitsPerSample, 34);
+    header.write('data', 36);
+    header.writeUInt32LE(pcmBytes.length, 40);
+    return Buffer.concat([header, pcmBytes]);
+  }
+
   app.get('/api/voice/status', (_req: Request, res: Response) => {
+    const elKey = getOptionalElevenLabsApiKey();
     res.json({
-      provider: 'elevenlabs',
-      configured: Boolean(process.env.ELEVENLABS_API_KEY?.trim()),
+      provider: elKey ? 'elevenlabs' : 'gemini',
+      configured: Boolean(elKey || process.env.GEMINI_API_KEY?.trim()),
+      elevenLabsConfigured: Boolean(elKey),
       language: 'en',
     });
   });
@@ -1364,62 +1507,108 @@ STRICT RULE:
         return;
       }
 
-      const apiKey = getElevenLabsApiKey();
       const cleanMime = mimeType.split(';')[0] || 'audio/webm';
-      const ext = cleanMime.includes('mp4')
-        ? 'mp4'
-        : cleanMime.includes('wav')
-          ? 'wav'
-          : cleanMime.includes('ogg')
-            ? 'ogg'
-            : cleanMime.includes('mpeg') || cleanMime.includes('mp3')
-              ? 'mp3'
-              : 'webm';
-      const audioBuffer = Buffer.from(audioBase64, 'base64');
+      const elKey = getOptionalElevenLabsApiKey();
 
-      const callScribe = async (modelId: string) => {
-        const form = new FormData();
-        form.append('model_id', modelId);
-        form.append('language_code', 'en');
-        form.append(
-          'file',
-          new Blob([audioBuffer], { type: cleanMime }),
-          `recording.${ext}`,
-        );
+      // 1. Primary: ElevenLabs Scribe STT (English)
+      if (elKey) {
+        try {
+          const ext = cleanMime.includes('mp4')
+            ? 'mp4'
+            : cleanMime.includes('wav')
+              ? 'wav'
+              : cleanMime.includes('ogg')
+                ? 'ogg'
+                : cleanMime.includes('mpeg') || cleanMime.includes('mp3')
+                  ? 'mp3'
+                  : 'webm';
+          const audioBuffer = Buffer.from(audioBase64, 'base64');
 
-        return fetch('https://api.elevenlabs.io/v1/speech-to-text', {
-          method: 'POST',
-          headers: {
-            'xi-api-key': apiKey,
+          const callScribe = async (modelId: string) => {
+            const form = new FormData();
+            form.append('model_id', modelId);
+            form.append('language_code', 'en');
+            form.append(
+              'file',
+              new Blob([audioBuffer], { type: cleanMime }),
+              `recording.${ext}`,
+            );
+
+            return fetch('https://api.elevenlabs.io/v1/speech-to-text', {
+              method: 'POST',
+              headers: {
+                'xi-api-key': elKey,
+              },
+              body: form,
+            });
+          };
+
+          let elResp = await callScribe('scribe_v2');
+          if (!elResp.ok && (elResp.status === 400 || elResp.status === 422)) {
+            elResp = await callScribe('scribe_v1');
+          }
+
+          if (elResp.ok) {
+            const data = (await elResp.json()) as { text?: string };
+            res.json({
+              text: (data.text ?? '').trim(),
+              language: 'en',
+              provider: 'elevenlabs',
+            });
+            return;
+          }
+        } catch {
+          // Fall through seamlessly to Gemini English transcription
+        }
+      }
+
+      // 2. Automatic Fallback: Gemini English Audio Transcription (v1beta gemini-3.5-transcribe -> v1 gemini-4-hydrogen)
+      const promptText =
+        'Transcribe the spoken audio into plain English text only. Output ONLY the exact spoken words in English without commentary, quotes, timestamps, or extra formatting. If the audio is silent or contains no speech, output nothing.';
+
+      try {
+        const aiBeta = getAiClient('v1beta');
+        const betaResp = await aiBeta.models.generateContent({
+          model: 'gemini-3.5-transcribe',
+          contents: {
+            parts: [
+              { inlineData: { mimeType: cleanMime, data: audioBase64 } },
+              { text: promptText },
+            ],
           },
-          body: form,
         });
-      };
-
-      let elResp = await callScribe('scribe_v2');
-      if (!elResp.ok && (elResp.status === 400 || elResp.status === 422)) {
-        elResp = await callScribe('scribe_v1');
+        res.json({
+          text: (betaResp.text ?? '').trim(),
+          language: 'en',
+          provider: 'gemini-transcribe',
+        });
+        return;
+      } catch {
+        const aiDefault = getAiClient();
+        const fallbackResp = await aiDefault.models.generateContent({
+          model: 'gemini-4-hydrogen',
+          contents: {
+            parts: [
+              { inlineData: { mimeType: cleanMime, data: audioBase64 } },
+              { text: promptText },
+            ],
+          },
+          config: {
+            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          },
+        });
+        res.json({
+          text: (fallbackResp.text ?? '').trim(),
+          language: 'en',
+          provider: 'gemini-audio',
+        });
+        return;
       }
-
-      if (!elResp.ok) {
-        const errText = await elResp.text();
-        throw new Error(
-          `ElevenLabs STT error (${elResp.status}): ${errText.slice(0, 300)}`,
-        );
-      }
-
-      const data = (await elResp.json()) as { text?: string };
-      res.json({
-        text: (data.text ?? '').trim(),
-        language: 'en',
-        provider: 'elevenlabs',
-      });
     } catch (err) {
-      console.error('ElevenLabs Transcribe error:', err);
+      console.error('Transcribe error:', err);
       const message =
         err instanceof Error ? err.message : 'Audio transcription failed.';
-      const status = message.includes('ELEVENLABS_API_KEY') ? 503 : 500;
-      res.status(status).json({ error: message });
+      res.status(500).json({ error: message });
     }
   });
 
@@ -1432,102 +1621,187 @@ STRICT RULE:
         return;
       }
 
-      const apiKey = getElevenLabsApiKey();
       const truncated = cleaned.slice(0, 3500);
-      let voiceId = await resolveElevenLabsVoiceId(apiKey);
+      const elKey = getOptionalElevenLabsApiKey();
 
-      const callElevenTts = async (vId: string, modelId: string) => {
-        return fetch(
-          `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(vId)}?output_format=mp3_44100_128`,
-          {
-            method: 'POST',
-            headers: {
-              'xi-api-key': apiKey,
-              'Content-Type': 'application/json',
-              Accept: 'audio/mpeg',
-            },
-            body: JSON.stringify({
-              text: truncated,
-              model_id: modelId,
-              ...(modelId === 'eleven_flash_v2_5' ? { language_code: 'en' } : {}),
-              voice_settings: {
-                stability: 0.5,
-                similarity_boost: 0.75,
+      // 1. Primary: ElevenLabs Neural English TTS
+      if (elKey) {
+        try {
+          let voiceId = await resolveElevenLabsVoiceId();
+
+          const callElevenTts = async (vId: string, modelId: string) => {
+            return fetch(
+              `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(vId)}?output_format=mp3_44100_128`,
+              {
+                method: 'POST',
+                headers: {
+                  'xi-api-key': elKey,
+                  'Content-Type': 'application/json',
+                  Accept: 'audio/mpeg',
+                },
+                body: JSON.stringify({
+                  text: truncated,
+                  model_id: modelId,
+                  ...(modelId === 'eleven_flash_v2_5'
+                    ? { language_code: 'en' }
+                    : {}),
+                  voice_settings: {
+                    stability: 0.5,
+                    similarity_boost: 0.75,
+                  },
+                }),
               },
-            }),
-          },
-        );
-      };
+            );
+          };
 
-      let elResp = await callElevenTts(voiceId, 'eleven_flash_v2_5');
-      if (elResp.status === 404 || elResp.status === 400) {
-        const discovered = await fetchFirstAvailableEnglishVoiceId(apiKey);
-        if (discovered && discovered !== voiceId) {
-          voiceId = discovered;
-          elResp = await callElevenTts(voiceId, 'eleven_flash_v2_5');
+          let elResp = await callElevenTts(voiceId, 'eleven_flash_v2_5');
+          if (elResp.status === 404 || elResp.status === 400) {
+            const discovered = await fetchFirstAvailableEnglishVoiceId(elKey);
+            if (discovered && discovered !== voiceId) {
+              voiceId = discovered;
+              elResp = await callElevenTts(voiceId, 'eleven_flash_v2_5');
+            }
+          }
+          if (!elResp.ok && (elResp.status === 400 || elResp.status === 422)) {
+            elResp = await callElevenTts(voiceId, 'eleven_multilingual_v2');
+          }
+
+          if (elResp.ok) {
+            const audioBuffer = Buffer.from(await elResp.arrayBuffer());
+            if (audioBuffer.length > 0) {
+              res.json({
+                audioBase64: audioBuffer.toString('base64'),
+                mimeType: 'audio/mpeg',
+                provider: 'elevenlabs',
+              });
+              return;
+            }
+          }
+        } catch {
+          // Fall through seamlessly to Gemini neural TTS
         }
       }
-      if (!elResp.ok && (elResp.status === 400 || elResp.status === 422)) {
-        elResp = await callElevenTts(voiceId, 'eleven_multilingual_v2');
-      }
 
-      if (!elResp.ok) {
-        const errText = await elResp.text();
-        throw new Error(
-          `ElevenLabs TTS error (${elResp.status}): ${errText.slice(0, 300)}`,
-        );
-      }
+      // 2. Automatic Fallback: Gemini Neural English TTS (v1beta gemini-3.8-flash-lite-tts)
+      try {
+        const aiBeta = getAiClient('v1beta');
+        const ttsResp = await aiBeta.models.generateContent({
+          model: 'gemini-3.8-flash-lite-tts',
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  text: truncated.slice(0, 2200),
+                },
+              ],
+            },
+          ],
+          config: {
+            responseModalities: ['AUDIO'],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: 'Kore' },
+              },
+            },
+          },
+        });
 
-      const audioBuffer = Buffer.from(await elResp.arrayBuffer());
-      if (audioBuffer.length === 0) {
-        res.status(502).json({ error: 'No audio returned by ElevenLabs.' });
-        return;
+        const inlineAudio =
+          ttsResp.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data)
+            ?.inlineData;
+        if (inlineAudio?.data) {
+          const rawAudioBuf = Buffer.from(inlineAudio.data, 'base64');
+          const reportedMime = (inlineAudio.mimeType || '').toLowerCase();
+          if (reportedMime.includes('mpeg') || reportedMime.includes('mp3')) {
+            res.json({
+              audioBase64: rawAudioBuf.toString('base64'),
+              mimeType: 'audio/mpeg',
+              provider: 'gemini-tts',
+            });
+            return;
+          }
+
+          const rateMatch = reportedMime.match(/rate=(\d+)/);
+          const sampleRate = rateMatch ? Number(rateMatch[1]) : 24000;
+          const wavBuf = pcm16ToWavBuffer(rawAudioBuf, sampleRate);
+          res.json({
+            audioBase64: wavBuf.toString('base64'),
+            mimeType: 'audio/wav',
+            provider: 'gemini-tts',
+          });
+          return;
+        }
+      } catch {
+        // Fall through cleanly to client-side English speechSynthesis without HTTP 500
       }
 
       res.json({
-        audioBase64: audioBuffer.toString('base64'),
-        mimeType: 'audio/mpeg',
-        provider: 'elevenlabs',
+        audioBase64: null,
+        fallback: 'browser',
+        language: 'en',
+        provider: 'browser-speech',
       });
     } catch (err) {
-      console.error('ElevenLabs TTS error:', err);
-      const message =
-        err instanceof Error ? err.message : 'Speech synthesis failed.';
-      const status = message.includes('ELEVENLABS_API_KEY') ? 503 : 500;
-      res.status(status).json({ error: message });
+      console.error('TTS error:', err);
+      res.json({
+        audioBase64: null,
+        fallback: 'browser',
+        language: 'en',
+        provider: 'browser-speech',
+      });
     }
   });
+
+  // Always return JSON for API body-parser / payload errors (never HTML)
+  app.use(
+    (err: unknown, req: Request, res: Response, next: NextFunction) => {
+      if (req.path.startsWith('/api/')) {
+        const status =
+          typeof (err as { status?: unknown })?.status === 'number'
+            ? ((err as { status: number }).status)
+            : 500;
+        const msg =
+          status === 413
+            ? 'Uploaded file payload exceeds the 50 MB request limit.'
+            : err instanceof Error
+              ? err.message
+              : 'Unexpected server error.';
+        res.status(status).json({ error: msg });
+        return;
+      }
+      next(err);
+    },
+  );
 
   const httpServer = http.createServer(app);
   const isProd = process.env.NODE_ENV === 'production';
   if (!isProd) {
-    const disableHmr = process.env.DISABLE_HMR === 'true';
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
-        ...(disableHmr ? {} : { ws: { server: httpServer } }),
+        hmr: false,
+        watch: null,
       },
       appType: 'spa',
     });
 
-    if (disableHmr) {
-      app.get('/@vite/client', async (_req: Request, res: Response, next) => {
-        try {
-          const result = await vite.transformRequest('/@vite/client');
-          if (result?.code) {
-            const patched = result.code.replace(
-              'transport.connect(createHMRHandler(handleMessage));',
-              '/* HMR disabled via DISABLE_HMR */',
-            );
-            res.type('application/javascript').send(patched);
-            return;
-          }
-        } catch {
-          // Fall through to Vite middleware
+    app.get('/@vite/client', async (_req: Request, res: Response, next) => {
+      try {
+        const result = await vite.transformRequest('/@vite/client');
+        if (result?.code) {
+          const patched = result.code.replace(
+            'transport.connect(createHMRHandler(handleMessage));',
+            '/* HMR WebSocket disabled in middleware mode */',
+          );
+          res.type('application/javascript').send(patched);
+          return;
         }
-        next();
-      });
-    }
+      } catch {
+        // Fall through to Vite middleware
+      }
+      next();
+    });
 
     app.use(vite.middlewares);
   } else {

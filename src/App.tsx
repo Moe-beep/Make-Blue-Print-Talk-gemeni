@@ -8,17 +8,14 @@ import {
 import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertTriangle,
-  ArrowUpRight,
   Box,
   Crosshair,
-  Database,
   Download,
   FileCode2,
   FileImage,
   FileSpreadsheet,
   FileText,
   FolderOpen,
-  Layers,
   Lightbulb,
   Loader2,
   Maximize2,
@@ -39,8 +36,6 @@ import { Viewport2D, type Viewport2DHandle } from './components/Viewport2D';
 import { Viewport3D, type Viewport3DHandle } from './components/Viewport3D';
 import type {
   ChatMessage,
-  DatasetOverview,
-  DatasetSampleMeta,
   DetectedObject,
   FileKind,
   HighlightTarget,
@@ -58,6 +53,26 @@ type ObjectCategoryFilter =
   | 'Furniture'
   | 'Plumbing & Appliances'
   | 'Structural';
+
+function isFiniteNum(val: unknown): val is number {
+  return typeof val === 'number' && Number.isFinite(val);
+}
+
+async function readJsonResponse<T extends Record<string, any>>(
+  resp: Response,
+): Promise<T> {
+  const raw = await resp.text();
+  if (!raw) return {} as T;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    throw new Error(
+      resp.ok
+        ? 'Received an invalid JSON response from the server.'
+        : `Server error (${resp.status}). Please try again.`,
+    );
+  }
+}
 
 function formatCleanAnswer(raw: string): string {
   if (!raw) return '';
@@ -167,80 +182,6 @@ function FileKindIcon({ kind }: { kind: FileKind }) {
   return <FileImage className="w-3.5 h-3.5 text-[#1F4E3D] shrink-0" />;
 }
 
-function buildProceduralSampleRoomObj(): string {
-  const lines: string[] = ['# Studio Room Sample (metres)'];
-  let vOffset = 1;
-  const addBox = (
-    name: string,
-    cx: number,
-    cy: number,
-    cz: number,
-    w: number,
-    h: number,
-    d: number,
-  ) => {
-    lines.push(`o ${name}`);
-    const hw = w / 2;
-    const hh = h / 2;
-    const hd = d / 2;
-    const verts = [
-      [cx - hw, cy - hh, cz - hd],
-      [cx + hw, cy - hh, cz - hd],
-      [cx + hw, cy + hh, cz - hd],
-      [cx - hw, cy + hh, cz - hd],
-      [cx - hw, cy - hh, cz + hd],
-      [cx + hw, cy - hh, cz + hd],
-      [cx + hw, cy + hh, cz + hd],
-      [cx - hw, cy + hh, cz + hd],
-    ];
-    for (const v of verts) {
-      lines.push(`v ${v[0].toFixed(3)} ${v[1].toFixed(3)} ${v[2].toFixed(3)}`);
-    }
-    const o = vOffset;
-    const faces = [
-      [o, o + 1, o + 2, o + 3],
-      [o + 4, o + 7, o + 6, o + 5],
-      [o, o + 4, o + 5, o + 1],
-      [o + 1, o + 5, o + 6, o + 2],
-      [o + 2, o + 6, o + 7, o + 3],
-      [o + 3, o + 7, o + 4, o],
-    ];
-    for (const f of faces) {
-      lines.push(`f ${f[0]} ${f[1]} ${f[2]} ${f[3]}`);
-    }
-    vOffset += 8;
-  };
-
-  addBox('Floor_Slab', 0, 0.05, 0, 5.2, 0.1, 4.4);
-  addBox('North_Wall', 0, 1.4, -2.15, 5.2, 2.7, 0.12);
-  addBox('West_Wall', -2.55, 1.4, 0, 0.12, 2.7, 4.4);
-  addBox('Door_Frame_Entry', -2.48, 1.15, 1.35, 0.16, 2.1, 0.9);
-  addBox('Window_Opening_North', 0.8, 1.5, -2.12, 1.8, 1.3, 0.18);
-
-  addBox('Dining_Table', 0.9, 0.76, -0.5, 1.6, 0.06, 0.9);
-  addBox('Table_Leg_1', 0.2, 0.38, -0.85, 0.06, 0.72, 0.06);
-  addBox('Table_Leg_2', 1.6, 0.38, -0.85, 0.06, 0.72, 0.06);
-  addBox('Table_Leg_3', 0.2, 0.38, -0.15, 0.06, 0.72, 0.06);
-  addBox('Table_Leg_4', 1.6, 0.38, -0.15, 0.06, 0.72, 0.06);
-
-  addBox('Dining_Chair_1', 0.55, 0.45, -1.15, 0.45, 0.85, 0.45);
-  addBox('Dining_Chair_2', 1.25, 0.45, -1.15, 0.45, 0.85, 0.45);
-  addBox('Dining_Chair_3', 0.55, 0.45, 0.15, 0.45, 0.85, 0.45);
-  addBox('Dining_Chair_4', 1.25, 0.45, 0.15, 0.45, 0.85, 0.45);
-
-  addBox('Lounge_Sofa', -1.45, 0.42, 0.4, 0.9, 0.78, 2.1);
-  addBox('Coffee_Table', -0.4, 0.24, 0.4, 0.65, 0.42, 1.1);
-  addBox('Bookshelf_Unit', -1.7, 1.05, -1.85, 1.3, 2.0, 0.38);
-
-  addBox('Ceiling_Pendant_Lamp_1', 0.55, 2.25, -0.5, 0.32, 0.28, 0.32);
-  addBox('Ceiling_Pendant_Lamp_2', 1.25, 2.25, -0.5, 0.32, 0.28, 0.32);
-  addBox('Standing_Floor_Lamp_Base', -2.05, 0.08, 1.65, 0.28, 0.04, 0.28);
-  addBox('Standing_Floor_Lamp_Stem', -2.05, 0.9, 1.65, 0.05, 1.6, 0.05);
-  addBox('Standing_Floor_Lamp_Shade', -2.05, 1.78, 1.65, 0.38, 0.32, 0.38);
-
-  return lines.join('\n');
-}
-
 function buildFallbackHighlights(
   text: string,
   analysis: TakeoffAnalysis | null,
@@ -250,8 +191,8 @@ function buildFallbackHighlights(
   const seen = new Set<string>();
 
   if (analysis) {
-    for (const room of analysis.rooms) {
-      const nLower = room.name.toLowerCase();
+    for (const room of analysis.rooms ?? []) {
+      const nLower = (room.name || '').toLowerCase();
       const labelLower = (room.labelInDrawing || '').toLowerCase();
       if (
         (nLower.length > 2 && lower.includes(nLower)) ||
@@ -271,8 +212,8 @@ function buildFallbackHighlights(
         }
       }
     }
-    for (const obj of analysis.detectedObjects) {
-      const oLower = obj.name.toLowerCase();
+    for (const obj of analysis.detectedObjects ?? []) {
+      const oLower = (obj.name || '').toLowerCase();
       const firstWord = oLower.split(/[\s:(]+/)[0];
       if (
         (oLower.length > 2 && lower.includes(oLower)) ||
@@ -392,12 +333,10 @@ function mergeHighlights(
 }
 
 export default function App() {
-  const [overview, setOverview] = useState<DatasetOverview | null>(null);
   const [projectFiles, setProjectFiles] = useState<ProjectFileEntry[]>([]);
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
 
   const [analyzing, setAnalyzing] = useState(false);
-  const [loadingSampleId, setLoadingSampleId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<InspectorTab>('takeoff');
@@ -405,7 +344,6 @@ export default function App() {
   const [objectSearch, setObjectSearch] = useState('');
   const [areaUnit, setAreaUnit] = useState<'m2' | 'ft2'>('m2');
   const [dragActive, setDragActive] = useState(false);
-  const [samplesDrawerOpen, setSamplesDrawerOpen] = useState(false);
 
   // Viewport active object/room highlight state
   const [activeHighlight, setActiveHighlight] = useState<HighlightTarget | null>(
@@ -485,10 +423,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    fetch('/api/dataset/overview')
-      .then((r) => r.json())
-      .then((data: DatasetOverview) => setOverview(data))
-      .catch(() => {});
     fetch('/api/voice/status')
       .then((r) => r.json())
       .then((data: { configured?: boolean }) =>
@@ -583,13 +517,17 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
-        const data = await resp.json();
-        if (!resp.ok) {
+        const data = await readJsonResponse<{
+          analysis?: TakeoffAnalysis;
+          matchedGroundTruth?: ProjectFileEntry['matchedGroundTruth'];
+          error?: string;
+        }>(resp);
+        if (!resp.ok || !data.analysis) {
           throw new Error(data.error || 'Analysis failed.');
         }
         updateEntry(entry.asset.id, (prev) => ({
           ...prev,
-          analysis: data.analysis,
+          analysis: data.analysis!,
           matchedGroundTruth: Array.isArray(data.matchedGroundTruth)
             ? data.matchedGroundTruth
             : prev.matchedGroundTruth,
@@ -678,124 +616,6 @@ export default function App() {
     }
   };
 
-  const loadDatasetSample = async (sample: DatasetSampleMeta) => {
-    const existing = projectFiles.find((f) => f.asset.name === sample.id);
-    if (existing) {
-      selectProjectFile(existing.asset.id);
-      setSamplesDrawerOpen(false);
-      return;
-    }
-
-    setLoadingSampleId(sample.id);
-    setErrorMsg(null);
-    try {
-      const resp = await fetch(
-        `/api/dataset/sample/${encodeURIComponent(sample.id)}`,
-      );
-      const data = await resp.json();
-      if (!resp.ok) {
-        throw new Error(data.error || 'Failed to load sample');
-      }
-      const binaryStr = atob(data.dataBase64);
-      const bytes = new Uint8Array(binaryStr.length);
-      for (let i = 0; i < binaryStr.length; i++) {
-        bytes[i] = binaryStr.charCodeAt(i);
-      }
-
-      const kind: FileKind =
-        sample.format === 'png'
-          ? '2d-image'
-          : sample.format === 'dxf'
-            ? '2d-dxf'
-            : '3d-ifc';
-
-      let previewUrl: string | undefined;
-      let rawText: string | undefined;
-      if (kind === '2d-image') {
-        const blob = new Blob([bytes], { type: 'image/png' });
-        previewUrl = URL.createObjectURL(blob);
-      } else {
-        rawText = new TextDecoder().decode(bytes);
-      }
-
-      const nextAsset: LoadedAsset = {
-        id: `${sample.id}-${Date.now()}`,
-        name: sample.id,
-        fileKind: kind,
-        mimeType: data.mimeType,
-        sizeBytes: bytes.byteLength,
-        previewUrl,
-        rawText,
-        sampleMeta: sample,
-      };
-      const entry: ProjectFileEntry = {
-        asset: nextAsset,
-        parsedSummary: {},
-        analysis: null,
-        chatMessages: [],
-        matchedGroundTruth: sample.groundTruthQuestions,
-        calibrationNote: null,
-        addedAt: new Date().toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
-      };
-
-      setProjectFiles((prev) => [...prev, entry]);
-      setActiveFileId(nextAsset.id);
-      setActiveHighlight(null);
-      setSamplesDrawerOpen(false);
-      document
-        .getElementById('workbench')
-        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Sample fetch failed.');
-    } finally {
-      setLoadingSampleId(null);
-    }
-  };
-
-  const loadSample3DRoom = () => {
-    const existing = projectFiles.find(
-      (f) => f.asset.name === 'furnished-studio-room.obj',
-    );
-    if (existing) {
-      selectProjectFile(existing.asset.id);
-      setSamplesDrawerOpen(false);
-      return;
-    }
-
-    const objText = buildProceduralSampleRoomObj();
-    setErrorMsg(null);
-    setSamplesDrawerOpen(false);
-    const nextAsset: LoadedAsset = {
-      id: `studio-room-${Date.now()}`,
-      name: 'furnished-studio-room.obj',
-      fileKind: '3d-mesh',
-      mimeType: 'text/plain',
-      sizeBytes: objText.length,
-      rawText: objText,
-    };
-    const entry: ProjectFileEntry = {
-      asset: nextAsset,
-      parsedSummary: {},
-      analysis: null,
-      chatMessages: [],
-      matchedGroundTruth: [],
-      calibrationNote: null,
-      addedAt: new Date().toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-    };
-    setProjectFiles((prev) => [...prev, entry]);
-    setActiveFileId(nextAsset.id);
-    setActiveHighlight(null);
-    document
-      .getElementById('workbench')
-      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
-
   const clearProjectFiles = () => {
     for (const f of projectFiles) {
       if (f.asset.previewUrl) URL.revokeObjectURL(f.asset.previewUrl);
@@ -840,7 +660,9 @@ export default function App() {
               dataBase64: imgPayload.dataBase64,
             }),
           });
-          const data = await resp.json();
+          const data = await readJsonResponse<{
+            boxes2D?: HighlightTarget['boxes2D'];
+          }>(resp);
           if (resp.ok && Array.isArray(data.boxes2D) && data.boxes2D.length > 0) {
             setActiveHighlight((curr) =>
               curr && curr.id === target.id
@@ -906,9 +728,16 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: cleanText }),
         });
-        const data = await resp.json();
+        const data = await readJsonResponse<{
+          audioBase64?: string | null;
+          mimeType?: string;
+          fallback?: string;
+          error?: string;
+        }>(resp);
         if (!resp.ok || !data.audioBase64) {
-          throw new Error(data.error || 'ElevenLabs TTS failed');
+          setLoadingTtsMsgId(null);
+          speakWithBrowserFallback();
+          return;
         }
         const byteChars = atob(data.audioBase64);
         const byteNums = new Uint8Array(byteChars.length);
@@ -980,9 +809,11 @@ export default function App() {
           mimeType: blob.type || 'audio/webm',
         }),
       });
-      const data = await resp.json();
+      const data = await readJsonResponse<{ text?: string; error?: string }>(
+        resp,
+      );
       if (!resp.ok) {
-        throw new Error(data.error || 'ElevenLabs transcription failed.');
+        throw new Error(data.error || 'Voice transcription failed.');
       }
       return String(data.text ?? '').trim();
     },
@@ -998,124 +829,13 @@ export default function App() {
     setErrorMsg(null);
     baseDictationTextRef.current = chatInput.trim();
     voiceSessionActiveRef.current = true;
+    let liveBrowserTranscript = '';
 
-    const startMediaRecorderPipeline = async (): Promise<boolean> => {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setErrorMsg('Your browser does not support microphone recording.');
-        voiceSessionActiveRef.current = false;
-        return false;
-      }
-
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaStreamRef.current = stream;
-        audioChunksRef.current = [];
-
-        const mimeCandidate = MediaRecorder.isTypeSupported('audio/webm')
-          ? 'audio/webm'
-          : MediaRecorder.isTypeSupported('audio/mp4')
-            ? 'audio/mp4'
-            : '';
-        const recorder = mimeCandidate
-          ? new MediaRecorder(stream, { mimeType: mimeCandidate })
-          : new MediaRecorder(stream);
-
-        recorder.ondataavailable = (e) => {
-          if (e.data && e.data.size > 0) {
-            audioChunksRef.current.push(e.data);
-          }
-        };
-
-        // Stream progressive chunks to ElevenLabs Scribe so spoken English writes live into chatInput
-        chunkTimerRef.current = window.setInterval(async () => {
-          if (
-            !voiceSessionActiveRef.current ||
-            chunkInFlightRef.current ||
-            audioChunksRef.current.length === 0
-          ) {
-            return;
-          }
-          chunkInFlightRef.current = true;
-          try {
-            const snapshot = new Blob(audioChunksRef.current, {
-              type: recorder.mimeType || 'audio/webm',
-            });
-            if (snapshot.size > 1200) {
-              const transcript = await transcribeBlobWithElevenLabs(snapshot);
-              if (transcript && voiceSessionActiveRef.current) {
-                const combined = [baseDictationTextRef.current, transcript]
-                  .filter(Boolean)
-                  .join(' ')
-                  .replace(/\s+/g, ' ');
-                setChatInput(combined);
-              }
-            }
-          } catch {
-            // Final transcription runs cleanly on stop
-          } finally {
-            chunkInFlightRef.current = false;
-          }
-        }, 2200);
-
-        recorder.onstop = async () => {
-          if (chunkTimerRef.current !== null) {
-            window.clearInterval(chunkTimerRef.current);
-            chunkTimerRef.current = null;
-          }
-          voiceSessionActiveRef.current = false;
-          stream.getTracks().forEach((t) => t.stop());
-          mediaStreamRef.current = null;
-          mediaRecorderRef.current = null;
-          setIsListening(false);
-
-          if (audioChunksRef.current.length === 0) return;
-          const fullBlob = new Blob(audioChunksRef.current, {
-            type: recorder.mimeType || 'audio/webm',
-          });
-          setTranscribingVoice(true);
-          try {
-            const finalText = await transcribeBlobWithElevenLabs(fullBlob);
-            if (finalText) {
-              const combined = [baseDictationTextRef.current, finalText]
-                .filter(Boolean)
-                .join(' ')
-                .replace(/\s+/g, ' ');
-              setChatInput(combined);
-            }
-          } catch (err) {
-            setErrorMsg(
-              err instanceof Error
-                ? err.message
-                : 'Could not transcribe voice message via ElevenLabs.',
-            );
-          } finally {
-            setTranscribingVoice(false);
-          }
-        };
-
-        mediaRecorderRef.current = recorder;
-        recorder.start(1000);
-        setIsListening(true);
-        return true;
-      } catch {
-        voiceSessionActiveRef.current = false;
-        setErrorMsg(
-          'Unable to access microphone. Please check browser permissions.',
-        );
-        return false;
-      }
-    };
-
-    // If ELEVENLABS_API_KEY is configured, stream directly via MediaRecorder -> ElevenLabs STT (English)
-    if (elevenLabsReady && typeof MediaRecorder !== 'undefined') {
-      await startMediaRecorderPipeline();
-      return;
-    }
-
-    // Fallback when ELEVENLABS_API_KEY is not yet configured: live browser SpeechRecognition (en-US)
+    // Start live browser SpeechRecognition (en-US) when supported for instant word-by-word feedback
     const SpeechRecCtor =
       (window as any).SpeechRecognition ||
       (window as any).webkitSpeechRecognition;
+    let speechRecStarted = false;
 
     if (SpeechRecCtor) {
       try {
@@ -1138,49 +858,167 @@ export default function App() {
             }
           }
           committedTranscript = nextCommitted;
-          const combined = [
-            baseDictationTextRef.current,
-            committedTranscript.trim(),
-            interim.trim(),
-          ]
+          liveBrowserTranscript = [committedTranscript.trim(), interim.trim()]
             .filter(Boolean)
             .join(' ')
             .replace(/\s+/g, ' ');
-          setChatInput(combined);
-        };
-
-        rec.onerror = (ev: any) => {
-          const code = String(ev?.error || '');
-          setIsListening(false);
-          speechRecRef.current = null;
-          voiceSessionActiveRef.current = false;
-          if (code === 'not-allowed' || code === 'service-not-allowed') {
-            setErrorMsg(
-              'Microphone access denied. Please allow microphone permissions.',
-            );
-          } else if (code === 'network') {
-            void startMediaRecorderPipeline();
-          } else if (code !== 'aborted' && code !== 'no-speech') {
-            setErrorMsg(`Speech recognition error: ${code}`);
+          if (liveBrowserTranscript) {
+            const combined = [
+              baseDictationTextRef.current,
+              liveBrowserTranscript,
+            ]
+              .filter(Boolean)
+              .join(' ')
+              .replace(/\s+/g, ' ');
+            setChatInput(combined);
           }
         };
 
-        rec.onend = () => {
-          setIsListening(false);
+        rec.onerror = () => {
           speechRecRef.current = null;
-          voiceSessionActiveRef.current = false;
+        };
+
+        rec.onend = () => {
+          speechRecRef.current = null;
+          if (!mediaRecorderRef.current) {
+            setIsListening(false);
+            voiceSessionActiveRef.current = false;
+          }
         };
 
         speechRecRef.current = rec;
         rec.start();
-        setIsListening(true);
-        return;
+        speechRecStarted = true;
       } catch {
-        // Fall through to MediaRecorder + ElevenLabs /api/transcribe
+        speechRecStarted = false;
       }
     }
 
-    await startMediaRecorderPipeline();
+    const startMediaRecorderPipeline = async (): Promise<boolean> => {
+      if (
+        typeof MediaRecorder === 'undefined' ||
+        !navigator.mediaDevices?.getUserMedia
+      ) {
+        if (!speechRecStarted) {
+          setErrorMsg('Your browser does not support microphone recording.');
+          voiceSessionActiveRef.current = false;
+        }
+        return speechRecStarted;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaStreamRef.current = stream;
+        audioChunksRef.current = [];
+
+        const mimeCandidate = MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : MediaRecorder.isTypeSupported('audio/mp4')
+            ? 'audio/mp4'
+            : '';
+        const recorder = mimeCandidate
+          ? new MediaRecorder(stream, { mimeType: mimeCandidate })
+          : new MediaRecorder(stream);
+
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            audioChunksRef.current.push(e.data);
+          }
+        };
+
+        // Stream progressive chunks to /api/transcribe when browser SpeechRecognition hasn't produced live text
+        chunkTimerRef.current = window.setInterval(async () => {
+          if (
+            !voiceSessionActiveRef.current ||
+            chunkInFlightRef.current ||
+            audioChunksRef.current.length === 0 ||
+            Boolean(liveBrowserTranscript)
+          ) {
+            return;
+          }
+          chunkInFlightRef.current = true;
+          try {
+            const snapshot = new Blob(audioChunksRef.current, {
+              type: recorder.mimeType || 'audio/webm',
+            });
+            if (snapshot.size > 1200) {
+              const transcript = await transcribeBlobWithElevenLabs(snapshot);
+              if (transcript && voiceSessionActiveRef.current) {
+                const combined = [baseDictationTextRef.current, transcript]
+                  .filter(Boolean)
+                  .join(' ')
+                  .replace(/\s+/g, ' ');
+                setChatInput(combined);
+              }
+            }
+          } catch {
+            // Final transcription runs on stop
+          } finally {
+            chunkInFlightRef.current = false;
+          }
+        }, 2500);
+
+        recorder.onstop = async () => {
+          if (chunkTimerRef.current !== null) {
+            window.clearInterval(chunkTimerRef.current);
+            chunkTimerRef.current = null;
+          }
+          voiceSessionActiveRef.current = false;
+          stream.getTracks().forEach((t) => t.stop());
+          mediaStreamRef.current = null;
+          mediaRecorderRef.current = null;
+          setIsListening(false);
+
+          if (audioChunksRef.current.length === 0) return;
+          const fullBlob = new Blob(audioChunksRef.current, {
+            type: recorder.mimeType || 'audio/webm',
+          });
+          if (fullBlob.size < 400) return;
+          setTranscribingVoice(true);
+          try {
+            const finalText = await transcribeBlobWithElevenLabs(fullBlob);
+            if (finalText) {
+              const combined = [baseDictationTextRef.current, finalText]
+                .filter(Boolean)
+                .join(' ')
+                .replace(/\s+/g, ' ');
+              setChatInput(combined);
+            }
+          } catch (err) {
+            if (!liveBrowserTranscript) {
+              setErrorMsg(
+                err instanceof Error
+                  ? err.message
+                  : 'Could not transcribe voice message.',
+              );
+            }
+          } finally {
+            setTranscribingVoice(false);
+          }
+        };
+
+        mediaRecorderRef.current = recorder;
+        recorder.start(1000);
+        setIsListening(true);
+        return true;
+      } catch {
+        if (!speechRecStarted) {
+          voiceSessionActiveRef.current = false;
+          setErrorMsg(
+            'Unable to access microphone. Please check browser permissions.',
+          );
+          return false;
+        }
+        setIsListening(true);
+        return true;
+      }
+    };
+
+    if (elevenLabsReady || !speechRecStarted) {
+      await startMediaRecorderPipeline();
+    } else {
+      setIsListening(true);
+    }
   }, [
     asking,
     asset,
@@ -1225,8 +1063,9 @@ export default function App() {
       const otherFiles = projectFilesRef.current
         .filter((f) => f.asset.id !== currentId)
         .map((f) => {
-          const areaStr = f.analysis?.dimensions.totalAreaSqM
-            ? `${f.analysis.dimensions.totalAreaSqM} m²`
+          const areaVal = f.analysis?.dimensions?.totalAreaSqM;
+          const areaStr = isFiniteNum(areaVal)
+            ? `${areaVal} m²`
             : 'not yet analyzed';
           return `- ${f.asset.name} (${shortFormatLabel(f.asset.fileKind)}, area: ${areaStr})`;
         })
@@ -1246,7 +1085,11 @@ export default function App() {
           })),
         }),
       });
-      const data = await resp.json();
+      const data = await readJsonResponse<{
+        answer?: string;
+        highlights?: Array<Partial<HighlightTarget>>;
+        error?: string;
+      }>(resp);
       if (!resp.ok) {
         throw new Error(data.error || 'Failed to answer question.');
       }
@@ -1337,7 +1180,7 @@ export default function App() {
     if (!analysis || !asset) return;
     const rows = [
       ['Section', 'Category', 'Item', 'Count / Area', 'Unit', 'Evidence', 'Notes'],
-      ...analysis.rooms.map((r) => [
+      ...(analysis.rooms ?? []).map((r) => [
         r.isExteriorOrPorch ? 'Exterior / Porch' : 'Interior Room',
         'Space',
         r.name,
@@ -1348,7 +1191,7 @@ export default function App() {
         r.areaEvidence ?? 'Estimated',
         `${r.dimensionsText} (${r.dimensionsEvidence ?? 'Unknown'}) ${r.notes}`.trim(),
       ]),
-      ...analysis.detectedObjects.map((o) => [
+      ...(analysis.detectedObjects ?? []).map((o) => [
         'Object',
         o.category,
         o.name,
@@ -1372,27 +1215,30 @@ export default function App() {
 
   const lightingTotal = useMemo(() => {
     if (!analysis) return 0;
-    return analysis.detectedObjects
+    return (analysis.detectedObjects ?? [])
       .filter((o) => o.category === 'Lighting')
-      .reduce((acc, o) => acc + o.count, 0);
+      .reduce((acc, o) => acc + (isFiniteNum(o.count) ? o.count : 0), 0);
   }, [analysis]);
 
   const totalObjectsCount = useMemo(() => {
     if (!analysis) return 0;
-    return analysis.detectedObjects.reduce((acc, o) => acc + o.count, 0);
+    return (analysis.detectedObjects ?? []).reduce(
+      (acc, o) => acc + (isFiniteNum(o.count) ? o.count : 0),
+      0,
+    );
   }, [analysis]);
 
   const filteredObjects = useMemo(() => {
     if (!analysis) return [];
-    return analysis.detectedObjects.filter((obj: DetectedObject) => {
+    return (analysis.detectedObjects ?? []).filter((obj: DetectedObject) => {
       const catOk =
         objectFilter === 'All' || obj.category === objectFilter;
       const q = objectSearch.trim().toLowerCase();
       const searchOk =
         !q ||
-        obj.name.toLowerCase().includes(q) ||
-        obj.locationsOrNotes.toLowerCase().includes(q) ||
-        obj.category.toLowerCase().includes(q);
+        (obj.name || '').toLowerCase().includes(q) ||
+        (obj.locationsOrNotes || '').toLowerCase().includes(q) ||
+        (obj.category || '').toLowerCase().includes(q);
       return catOk && searchOk;
     });
   }, [analysis, objectFilter, objectSearch]);
@@ -1403,9 +1249,10 @@ export default function App() {
     id: `takeoff-room-${idx}-${room.name}`,
     label: room.name,
     category: 'Space',
-    keywords: [room.name.toLowerCase(), room.labelInDrawing.toLowerCase()].filter(
-      Boolean,
-    ),
+    keywords: [
+      (room.name || '').toLowerCase(),
+      (room.labelInDrawing || '').toLowerCase(),
+    ].filter(Boolean),
     exactNames: [room.name, room.labelInDrawing].filter(Boolean),
     boxes2D: room.boxes2D,
   });
@@ -1457,143 +1304,20 @@ export default function App() {
           >
             <StoaLogo />
           </a>
-          <span className="hidden lg:inline-block h-4 w-px bg-[#E5E2DC]" />
-          <span className="hidden lg:inline-block text-[11px] font-medium tracking-wide uppercase text-[#6D6A62]">
-            Spatial Takeoff
-          </span>
         </div>
-
-        <nav
-          aria-label="Primary sections"
-          className="hidden md:flex items-center gap-1 p-1 bg-[#F2EFE8] border border-[#E2DED4] rounded-xl"
-        >
-          <a
-            href="#workbench"
-            onClick={(e) => {
-              e.preventDefault();
-              document
-                .getElementById('workbench')
-                ?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[13px] font-medium text-[#2E2C27] hover:text-[#161614] hover:bg-white/75 transition-all whitespace-nowrap shrink-0"
-          >
-            <Layers className="w-3.5 h-3.5 text-[#1F4E3D]" />
-            Workspace
-          </a>
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('takeoff');
-              document
-                .getElementById('inspector-panel')
-                ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[13px] transition-all whitespace-nowrap shrink-0 cursor-pointer ${
-              activeTab === 'takeoff'
-                ? 'bg-white text-[#161614] font-semibold shadow-xs ring-1 ring-[#D8D3C8]'
-                : 'font-medium text-[#4A4842] hover:text-[#161614] hover:bg-white/75'
-            }`}
-          >
-            <FileSpreadsheet
-              className={`w-3.5 h-3.5 ${
-                activeTab === 'takeoff' ? 'text-[#1F4E3D]' : 'text-[#6D6A62]'
-              }`}
-            />
-            Takeoff
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('assistant');
-              document
-                .getElementById('inspector-panel')
-                ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[13px] transition-all whitespace-nowrap shrink-0 cursor-pointer ${
-              activeTab === 'assistant'
-                ? 'bg-white text-[#161614] font-semibold shadow-xs ring-1 ring-[#D8D3C8]'
-                : 'font-medium text-[#4A4842] hover:text-[#161614] hover:bg-white/75'
-            }`}
-          >
-            <MessageSquare
-              className={`w-3.5 h-3.5 ${
-                activeTab === 'assistant' ? 'text-[#1F4E3D]' : 'text-[#6D6A62]'
-              }`}
-            />
-            Assistant
-          </button>
-          <button
-            type="button"
-            onClick={() => setSamplesDrawerOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[13px] font-medium text-[#4A4842] hover:text-[#161614] hover:bg-white/75 transition-all whitespace-nowrap shrink-0 cursor-pointer"
-          >
-            <Database className="w-3.5 h-3.5 text-[#6D6A62]" />
-            Samples
-          </button>
-        </nav>
 
         <div className="shrink-0">
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-[#1F4E3D] rounded-lg hover:bg-[#183E30] shadow-xs transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="inline-flex items-center gap-2 px-3 sm:px-4 py-2 text-xs font-semibold text-white bg-[#1F4E3D] rounded-lg hover:bg-[#183E30] shadow-xs transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Upload className="w-3.5 h-3.5" />
-            Add Project Files
+            <span className="hidden sm:inline">Add Project Files</span>
+            <span className="sm:hidden">Upload</span>
           </button>
         </div>
       </header>
-
-      {/* Mobile navigation strip */}
-      <nav
-        aria-label="Mobile sections"
-        className="md:hidden bg-[#F4F2EC] border-b border-[#E2DED4] px-3 py-2 flex items-center gap-1.5 overflow-x-auto text-xs"
-      >
-        <button
-          type="button"
-          onClick={() =>
-            document
-              .getElementById('workbench')
-              ?.scrollIntoView({ behavior: 'smooth' })
-          }
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/80 text-[#161614] font-medium border border-[#E2DED4] whitespace-nowrap shrink-0"
-        >
-          <Layers className="w-3.5 h-3.5 text-[#1F4E3D]" />
-          Workspace
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('takeoff')}
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg whitespace-nowrap shrink-0 ${
-            activeTab === 'takeoff'
-              ? 'bg-[#161614] text-white font-semibold'
-              : 'bg-white/80 text-[#3B3934] font-medium border border-[#E2DED4]'
-          }`}
-        >
-          <FileSpreadsheet className="w-3.5 h-3.5" />
-          Takeoff
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('assistant')}
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg whitespace-nowrap shrink-0 ${
-            activeTab === 'assistant'
-              ? 'bg-[#161614] text-white font-semibold'
-              : 'bg-white/80 text-[#3B3934] font-medium border border-[#E2DED4]'
-          }`}
-        >
-          <MessageSquare className="w-3.5 h-3.5" />
-          Assistant
-        </button>
-        <button
-          type="button"
-          onClick={() => setSamplesDrawerOpen(true)}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/80 text-[#3B3934] font-medium border border-[#E2DED4] whitespace-nowrap shrink-0"
-        >
-          <Database className="w-3.5 h-3.5" />
-          Samples
-        </button>
-      </nav>
 
       {/* Main Spatial Workbench */}
       <main id="workbench" className="flex-1 flex flex-col">
@@ -1621,14 +1345,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setSamplesDrawerOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#3B3934] bg-[#F3F1EB] hover:bg-[#EAE7DF] rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <Database className="w-3.5 h-3.5 text-[#5C5A54]" />
-              Browse Samples
-            </button>
             {asset && (
               <button
                 type="button"
@@ -1738,11 +1454,14 @@ export default function App() {
               ) : (
                 projectFiles.map((entry) => {
                   const isActive = entry.asset.id === activeFileId;
-                  const areaVal = entry.analysis?.dimensions.totalAreaSqM;
+                  const areaVal = entry.analysis?.dimensions?.totalAreaSqM;
                   const lampCount = entry.analysis
-                    ? entry.analysis.detectedObjects
+                    ? (entry.analysis.detectedObjects ?? [])
                         .filter((o) => o.category === 'Lighting')
-                        .reduce((a, b) => a + b.count, 0)
+                        .reduce(
+                          (a, b) => a + (isFiniteNum(b.count) ? b.count : 0),
+                          0,
+                        )
                     : null;
 
                   return (
@@ -1779,7 +1498,7 @@ export default function App() {
                         </div>
                         {entry.analysis ? (
                           <div className="text-[10px] font-mono text-[#1F4E3D] mt-1 tabular-nums truncate">
-                            {areaVal !== null && areaVal !== undefined
+                            {isFiniteNum(areaVal)
                               ? `${areaVal.toFixed(1)} m²`
                               : 'Analyzed'}
                             {lampCount !== null ? ` · ${lampCount} lamps` : ''}
@@ -1805,17 +1524,6 @@ export default function App() {
                   );
                 })
               )}
-            </div>
-
-            <div className="p-3 border-t border-[#E5E2DC] bg-[#F4F2EC]">
-              <button
-                type="button"
-                onClick={loadSample3DRoom}
-                className="w-full inline-flex items-center justify-center gap-1.5 py-1.5 px-2.5 text-[11px] font-medium text-[#3B3934] bg-white border border-[#DEDAD0] rounded-md hover:bg-[#FAF9F5] transition-colors cursor-pointer"
-              >
-                <Layers className="w-3.5 h-3.5 text-[#1F4E3D]" />
-                Add Sample 3D Studio
-              </button>
             </div>
           </aside>
 
@@ -1860,14 +1568,6 @@ export default function App() {
                     >
                       <Upload className="w-4 h-4" />
                       Upload Project Files
-                    </button>
-                    <button
-                      type="button"
-                      onClick={loadSample3DRoom}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-[#161614] bg-[#F3F1EB] rounded-lg hover:bg-[#EAE7DF] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-                    >
-                      <Layers className="w-4 h-4" />
-                      Load 3D Furnished Room
                     </button>
                   </div>
 
@@ -2116,23 +1816,27 @@ export default function App() {
                         <div className="grid grid-cols-2 border border-[#E5E2DC] rounded-lg divide-x divide-y divide-[#E5E2DC]">
                           <div className="p-3">
                             <div className="text-[11px] text-[#5C5A54]">
-                              {analysis.dimensions.printedTotalAreaSqM !== null
+                              {isFiniteNum(
+                                analysis.dimensions?.printedTotalAreaSqM,
+                              )
                                 ? 'Printed Total Area'
                                 : 'Reported Area'}
                             </div>
                             <div className="text-base font-bold font-mono tabular-nums text-[#161614] mt-0.5">
                               {areaUnit === 'm2'
-                                ? analysis.dimensions.totalAreaSqM !== null
+                                ? isFiniteNum(analysis.dimensions?.totalAreaSqM)
                                   ? `${analysis.dimensions.totalAreaSqM.toFixed(2)} m²`
                                   : 'Unknown'
-                                : analysis.dimensions.totalAreaSqFt !== null
+                                : isFiniteNum(analysis.dimensions?.totalAreaSqFt)
                                   ? `${analysis.dimensions.totalAreaSqFt.toFixed(0)} ft²`
-                                  : analysis.dimensions.totalAreaSqM !== null
+                                  : isFiniteNum(
+                                        analysis.dimensions?.totalAreaSqM,
+                                      )
                                     ? `${(analysis.dimensions.totalAreaSqM * 10.7639).toFixed(0)} ft²`
                                     : 'Unknown'}
                             </div>
                             <div className="text-[10px] font-mono text-[#7A776F] mt-0.5">
-                              {analysis.dimensions.totalAreaEvidence ??
+                              {analysis.dimensions?.totalAreaEvidence ??
                                 'Estimated'}
                             </div>
                           </div>
@@ -2141,14 +1845,16 @@ export default function App() {
                               Gross Footprint
                             </div>
                             <div className="text-base font-bold font-mono tabular-nums text-[#161614] mt-0.5">
-                              {analysis.dimensions.grossFootprintAreaSqM !== null
+                              {isFiniteNum(
+                                analysis.dimensions?.grossFootprintAreaSqM,
+                              )
                                 ? areaUnit === 'm2'
                                   ? `${analysis.dimensions.grossFootprintAreaSqM.toFixed(2)} m²`
                                   : `${(analysis.dimensions.grossFootprintAreaSqM * 10.7639).toFixed(0)} ft²`
                                 : 'Unknown'}
                             </div>
                             <div className="text-[10px] font-mono text-[#7A776F] mt-0.5">
-                              {analysis.dimensions.grossFootprintEvidence ??
+                              {analysis.dimensions?.grossFootprintEvidence ??
                                 'Unknown'}
                             </div>
                           </div>
@@ -2161,7 +1867,7 @@ export default function App() {
                               {lightingTotal}
                             </div>
                             <div className="text-[10px] font-mono text-[#7A776F] mt-0.5">
-                              {analysis.rooms.length} spaces
+                              {(analysis.rooms ?? []).length} spaces
                             </div>
                           </div>
                           <div className="p-3">
@@ -2206,13 +1912,15 @@ export default function App() {
                                 Printed Living / Total
                               </dt>
                               <dd className="font-mono tabular-nums text-[#161614] mt-0.5">
-                                {analysis.dimensions.printedLivingAreaSqM !==
-                                null
+                                {isFiniteNum(
+                                  analysis.dimensions?.printedLivingAreaSqM,
+                                )
                                   ? `${analysis.dimensions.printedLivingAreaSqM.toFixed(2)} m²`
                                   : '—'}{' '}
                                 /{' '}
-                                {analysis.dimensions.printedTotalAreaSqM !==
-                                null
+                                {isFiniteNum(
+                                  analysis.dimensions?.printedTotalAreaSqM,
+                                )
                                   ? `${analysis.dimensions.printedTotalAreaSqM.toFixed(2)} m²`
                                   : '—'}
                               </dd>
@@ -2222,12 +1930,14 @@ export default function App() {
                                 Summed Rooms + Exterior
                               </dt>
                               <dd className="font-mono tabular-nums text-[#161614] mt-0.5">
-                                {analysis.dimensions.sumInteriorRoomsSqM !==
-                                null
+                                {isFiniteNum(
+                                  analysis.dimensions?.sumInteriorRoomsSqM,
+                                )
                                   ? `${analysis.dimensions.sumInteriorRoomsSqM.toFixed(2)} m²`
                                   : '—'}
-                                {analysis.dimensions.sumExteriorSpacesSqM !==
-                                null
+                                {isFiniteNum(
+                                  analysis.dimensions?.sumExteriorSpacesSqM,
+                                )
                                   ? ` + ${analysis.dimensions.sumExteriorSpacesSqM.toFixed(2)} m²`
                                   : ''}
                               </dd>
@@ -2235,13 +1945,14 @@ export default function App() {
                             <div>
                               <dt className="text-[#5C5A54]">Ceiling Height</dt>
                               <dd className="font-mono tabular-nums text-[#161614] mt-0.5">
-                                {analysis.dimensions.estimatedCeilingHeightM !==
-                                null
+                                {isFiniteNum(
+                                  analysis.dimensions?.estimatedCeilingHeightM,
+                                )
                                   ? `${analysis.dimensions.estimatedCeilingHeightM.toFixed(2)} m`
                                   : 'Unknown'}{' '}
                                 <span className="text-[10px] text-[#7A776F]">
                                   ·{' '}
-                                  {analysis.dimensions.ceilingHeightEvidence ??
+                                  {analysis.dimensions?.ceilingHeightEvidence ??
                                     'Unknown'}
                                 </span>
                               </dd>
@@ -2251,12 +1962,14 @@ export default function App() {
                                 Interior Volume
                               </dt>
                               <dd className="font-mono tabular-nums text-[#161614] mt-0.5">
-                                {analysis.dimensions.estimatedVolumeCuM !== null
+                                {isFiniteNum(
+                                  analysis.dimensions?.estimatedVolumeCuM,
+                                )
                                   ? `${analysis.dimensions.estimatedVolumeCuM.toFixed(2)} m³`
                                   : 'Unknown'}{' '}
                                 <span className="text-[10px] text-[#7A776F]">
                                   ·{' '}
-                                  {analysis.dimensions.volumeEvidence ??
+                                  {analysis.dimensions?.volumeEvidence ??
                                     'Unknown'}
                                 </span>
                               </dd>
@@ -2269,8 +1982,8 @@ export default function App() {
                           <div className="flex items-center justify-between gap-2 text-xs text-[#5C5A54]">
                             <span>{analysis.sceneType}</span>
                             <span className="font-mono">
-                              {analysis.dimensions.footprintDimensionsText ||
-                                analysis.dimensions.footprintSummary}
+                              {analysis.dimensions?.footprintDimensionsText ||
+                                analysis.dimensions?.footprintSummary}
                             </span>
                           </div>
                           <p className="text-xs text-[#161614] leading-relaxed">
@@ -2310,7 +2023,7 @@ export default function App() {
                             </div>
                           </div>
 
-                          {analysis.rooms.length === 0 ? (
+                          {(analysis.rooms ?? []).length === 0 ? (
                             <p className="text-xs text-[#5C5A54] py-3 border-y border-[#F0EEE8]">
                               No distinct room boundaries identified.
                             </p>
@@ -2331,7 +2044,7 @@ export default function App() {
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-[#F0EEE8]">
-                                  {analysis.rooms.map((room, idx) => {
+                                  {(analysis.rooms ?? []).map((room, idx) => {
                                     const target = makeRoomHighlightTarget(
                                       room,
                                       idx,
@@ -2341,10 +2054,11 @@ export default function App() {
                                     const areaVal =
                                       areaUnit === 'm2'
                                         ? room.estimatedAreaSqM
-                                        : (room.estimatedAreaSqFt ??
-                                          (room.estimatedAreaSqM !== null
+                                        : isFiniteNum(room.estimatedAreaSqFt)
+                                          ? room.estimatedAreaSqFt
+                                          : isFiniteNum(room.estimatedAreaSqM)
                                             ? room.estimatedAreaSqM * 10.7639
-                                            : null));
+                                            : null;
                                     return (
                                       <tr
                                         key={`${room.name}-${idx}`}
@@ -2366,7 +2080,7 @@ export default function App() {
                                           </div>
                                         </td>
                                         <td className="py-2 px-2 text-right font-mono tabular-nums font-medium text-[#161614]">
-                                          {areaVal !== null
+                                          {isFiniteNum(areaVal)
                                             ? areaVal.toFixed(2)
                                             : 'Unknown'}
                                         </td>
@@ -2814,189 +2528,7 @@ export default function App() {
             </div>
           </div>
         </section>
-
-        {/* Benchmark Samples Library */}
-        <section
-          id="dataset-library"
-          className="px-6 py-8 bg-[#F7F6F2] max-w-[1440px] w-full mx-auto"
-        >
-          <div className="flex flex-wrap items-end justify-between gap-4 mb-5">
-            <div>
-              <h2 className="text-base font-bold text-[#161614] font-display">
-                Junction Benchmark Library
-              </h2>
-              <p className="text-xs text-[#5C5A54] mt-1">
-                Stream 2D PNG floor plans, CAD DXF drawings, and 3D IFC models
-                into your active project binder.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={loadSample3DRoom}
-              className="text-xs font-medium text-[#1F4E3D] hover:underline underline-offset-4 cursor-pointer whitespace-nowrap shrink-0"
-            >
-              Add 3D Furnished Room (.obj)
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {(overview?.samples ?? []).map((sample) => {
-              const isLoading = loadingSampleId === sample.id;
-              return (
-                <div
-                  key={sample.id}
-                  className="border border-[#E5E2DC] rounded-xl p-4 flex flex-col justify-between gap-3 hover:border-[#C9C4B8] transition-colors bg-white"
-                >
-                  <div>
-                    <div className="text-xs text-[#5C5A54] flex items-center gap-1.5">
-                      <span>{sample.source}</span>
-                      <span aria-hidden="true">·</span>
-                      <span className="font-mono uppercase">
-                        {sample.format}
-                      </span>
-                      <span aria-hidden="true">·</span>
-                      <span className="font-mono tabular-nums">
-                        {formatBytes(sample.uncomp_sz)}
-                      </span>
-                    </div>
-                    <h3 className="text-sm font-semibold text-[#161614] mt-1">
-                      {sample.title}
-                    </h3>
-                    <p className="text-xs text-[#5C5A54] mt-1">
-                      {sample.groundTruthQuestions.length} verified Q&amp;As
-                      included
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    disabled={Boolean(loadingSampleId)}
-                    onClick={() => void loadDatasetSample(sample)}
-                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-[#161614] bg-[#FAF9F5] border border-[#E5E2DC] rounded-lg hover:bg-[#F0EEE8] disabled:opacity-50 transition-colors cursor-pointer"
-                  >
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        Adding to Project…
-                      </>
-                    ) : (
-                      <>
-                        <ArrowUpRight className="w-3.5 h-3.5" />
-                        Add to Project Binder
-                      </>
-                    )}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </section>
       </main>
-
-      {/* Slide-over Samples Drawer */}
-      <AnimatePresence>
-        {samplesDrawerOpen && (
-          <div className="fixed inset-0 z-50 flex justify-end">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.16 }}
-              onClick={() => setSamplesDrawerOpen(false)}
-              className="fixed inset-0 bg-[#161614]/30"
-            />
-            <motion.aside
-              initial={{ x: '100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '100%' }}
-              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-              aria-label="Sample Library"
-              className="relative z-10 w-full max-w-md bg-white border-l border-[#E5E2DC] shadow-xl flex flex-col h-full"
-            >
-              <div className="px-5 py-4 border-b border-[#E5E2DC] flex items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-sm font-bold text-[#161614] font-display">
-                    Add Sample to Project Binder
-                  </h2>
-                  <p className="text-xs text-[#5C5A54] mt-0.5">
-                    Load a verified 2D floor plan, CAD DXF, or 3D BIM model.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSamplesDrawerOpen(false)}
-                  aria-label="Close sample drawer"
-                  className="p-1.5 rounded-lg text-[#5C5A54] hover:text-[#161614] hover:bg-[#F3F1EB] transition-colors cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-5 space-y-3">
-                <button
-                  type="button"
-                  onClick={loadSample3DRoom}
-                  className="w-full text-left border border-[#C6D9CC] bg-[#E8EFEA]/60 hover:bg-[#E8EFEA] rounded-xl p-3.5 transition-colors cursor-pointer"
-                >
-                  <div className="text-[11px] font-mono text-[#1F4E3D]">
-                    PROCEDURAL 3D · OBJ
-                  </div>
-                  <div className="text-sm font-semibold text-[#161614] mt-0.5">
-                    Furnished Studio Room (3 Lamps, Sofa, Dining Set)
-                  </div>
-                  <div className="text-xs text-[#5C5A54] mt-1">
-                    Instant 3D scene for testing room sizing and object
-                    highlighting.
-                  </div>
-                </button>
-
-                {(overview?.samples ?? []).map((sample) => {
-                  const isLoading = loadingSampleId === sample.id;
-                  const isInProject = projectFiles.some(
-                    (f) => f.asset.name === sample.id,
-                  );
-                  return (
-                    <button
-                      key={sample.id}
-                      type="button"
-                      disabled={Boolean(loadingSampleId)}
-                      onClick={() => void loadDatasetSample(sample)}
-                      className={`w-full text-left border rounded-xl p-3.5 transition-colors cursor-pointer disabled:opacity-50 ${
-                        isInProject
-                          ? 'border-[#1F4E3D] bg-[#FAF9F5]'
-                          : 'border-[#E5E2DC] bg-white hover:border-[#C9C4B8] hover:bg-[#FAF9F5]'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2 text-[11px] text-[#5C5A54]">
-                        <span>
-                          {sample.source} ·{' '}
-                          <span className="font-mono uppercase">
-                            {sample.format}
-                          </span>{' '}
-                          ·{' '}
-                          <span className="font-mono tabular-nums">
-                            {formatBytes(sample.uncomp_sz)}
-                          </span>
-                        </span>
-                        {isLoading && (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-[#1F4E3D]" />
-                        )}
-                      </div>
-                      <div className="text-sm font-semibold text-[#161614] mt-1">
-                        {sample.title}
-                      </div>
-                      <div className="text-xs text-[#5C5A54] mt-0.5">
-                        {sample.groundTruthQuestions.length} verified Q&amp;As
-                        {isInProject ? ' · Already in project' : ''}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </motion.aside>
-          </div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

@@ -645,17 +645,28 @@ export function parseDxfFile(text: string): ParsedDxfResult {
       );
     } else if (p.kind === 'text') {
       const fontSize = Math.max(p.height * 0.85, strokeW * 5);
-      const escaped = p.text
+      const escaped = Array.from(p.text)
+        .filter((ch) => {
+          const code = ch.charCodeAt(0);
+          return code === 9 || code === 10 || code === 13 || code >= 32;
+        })
+        .join('')
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
       svgParts.push(
         `<text x="${p.x.toFixed(3)}" y="${(-p.y).toFixed(3)}" fill="#0f172a" font-family="DM Sans, sans-serif" font-size="${fontSize.toFixed(4)}">${escaped}</text>`,
       );
     }
   }
 
-  const svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vbX.toFixed(3)} ${vbY.toFixed(3)} ${vbW.toFixed(3)} ${vbH.toFixed(3)}" style="background:#ffffff">${svgParts.join('')}</svg>`;
+  const safeVbX = Number.isFinite(vbX) ? vbX : 0;
+  const safeVbY = Number.isFinite(vbY) ? vbY : 0;
+  const safeVbW = Number.isFinite(vbW) && vbW > 0 ? vbW : 100;
+  const safeVbH = Number.isFinite(vbH) && vbH > 0 ? vbH : 100;
+  const svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${safeVbX.toFixed(3)} ${safeVbY.toFixed(3)} ${safeVbW.toFixed(3)} ${safeVbH.toFixed(3)}" style="background:#ffffff">${svgParts.join('')}</svg>`;
 
   return {
     summary: {

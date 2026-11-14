@@ -631,7 +631,7 @@ const ASK_RESPONSE_SCHEMA = {
     answer: {
       type: Type.STRING,
       description:
-        'Clean, structured plain-text answer in the user language (NEVER raw JSON, NEVER code blocks, NEVER asterisks ** or *). State exact quantities, units, and evidence classification (Explicit/Calculated/Estimated/Unknown).',
+        'Clean, structured plain-text answer strictly in English (NEVER raw JSON, NEVER code blocks, NEVER asterisks ** or *). State exact quantities, units, and evidence classification (Explicit/Calculated/Estimated/Unknown).',
     },
     highlights: {
       type: Type.ARRAY,
@@ -1075,7 +1075,7 @@ async function startServer() {
         `USER QUESTION: ${question}
 
 Respond in the required JSON schema object with keys "answer" and "highlights":
-1. "answer": Plain human-readable structured text in the same language as the user's question.
+1. "answer": Plain human-readable structured text strictly in English.
    STRICT FORMATTING RULES:
    - NEVER put JSON, curly braces, or code blocks inside "answer".
    - NEVER use Markdown asterisks (**bold**, *italic*, or * bullets) or heading hashes (#).
@@ -1291,6 +1291,210 @@ STRICT RULE:
       const message =
         err instanceof Error ? err.message : 'Failed to locate objects in 2D image.';
       res.status(500).json({ error: message });
+    }
+  });
+
+  let cachedElevenLabsVoiceId: string | null = null;
+
+  function getElevenLabsApiKey(): string {
+    const key = process.env.ELEVENLABS_API_KEY?.trim();
+    if (!key) {
+      throw new Error(
+        'ELEVENLABS_API_KEY is not configured. Please add it in Settings > Secrets.',
+      );
+    }
+    return key;
+  }
+
+  async function resolveElevenLabsVoiceId(apiKey: string): Promise<string> {
+    const envVoice = process.env.ELEVENLABS_VOICE_ID?.trim();
+    if (envVoice) return envVoice;
+    if (cachedElevenLabsVoiceId) return cachedElevenLabsVoiceId;
+    return 'EXAVITQu4vr4xnSDxMaL'; // Sarah (English default)
+  }
+
+  async function fetchFirstAvailableEnglishVoiceId(
+    apiKey: string,
+  ): Promise<string | null> {
+    try {
+      const resp = await fetch('https://api.elevenlabs.io/v1/voices', {
+        headers: { 'xi-api-key': apiKey },
+      });
+      if (!resp.ok) return null;
+      const data = (await resp.json()) as {
+        voices?: Array<{
+          voice_id?: string;
+          labels?: Record<string, string>;
+        }>;
+      };
+      const voices = Array.isArray(data.voices) ? data.voices : [];
+      const enVoice = voices.find((v) => {
+        const lang = String(v.labels?.language || '').toLowerCase();
+        const accent = String(v.labels?.accent || '').toLowerCase();
+        return (
+          lang.includes('en') ||
+          accent.includes('american') ||
+          accent.includes('british')
+        );
+      });
+      const chosen = enVoice?.voice_id || voices[0]?.voice_id || null;
+      if (chosen) cachedElevenLabsVoiceId = chosen;
+      return chosen;
+    } catch {
+      return null;
+    }
+  }
+
+  app.get('/api/voice/status', (_req: Request, res: Response) => {
+    res.json({
+      provider: 'elevenlabs',
+      configured: Boolean(process.env.ELEVENLABS_API_KEY?.trim()),
+      language: 'en',
+    });
+  });
+
+  app.post('/api/transcribe', async (req: Request, res: Response) => {
+    try {
+      const { audioBase64, mimeType } = req.body as {
+        audioBase64?: string;
+        mimeType?: string;
+      };
+      if (!audioBase64 || !mimeType) {
+        res.status(400).json({ error: 'Audio data and mimeType are required.' });
+        return;
+      }
+
+      const apiKey = getElevenLabsApiKey();
+      const cleanMime = mimeType.split(';')[0] || 'audio/webm';
+      const ext = cleanMime.includes('mp4')
+        ? 'mp4'
+        : cleanMime.includes('wav')
+          ? 'wav'
+          : cleanMime.includes('ogg')
+            ? 'ogg'
+            : cleanMime.includes('mpeg') || cleanMime.includes('mp3')
+              ? 'mp3'
+              : 'webm';
+      const audioBuffer = Buffer.from(audioBase64, 'base64');
+
+      const callScribe = async (modelId: string) => {
+        const form = new FormData();
+        form.append('model_id', modelId);
+        form.append('language_code', 'en');
+        form.append(
+          'file',
+          new Blob([audioBuffer], { type: cleanMime }),
+          `recording.${ext}`,
+        );
+
+        return fetch('https://api.elevenlabs.io/v1/speech-to-text', {
+          method: 'POST',
+          headers: {
+            'xi-api-key': apiKey,
+          },
+          body: form,
+        });
+      };
+
+      let elResp = await callScribe('scribe_v2');
+      if (!elResp.ok && (elResp.status === 400 || elResp.status === 422)) {
+        elResp = await callScribe('scribe_v1');
+      }
+
+      if (!elResp.ok) {
+        const errText = await elResp.text();
+        throw new Error(
+          `ElevenLabs STT error (${elResp.status}): ${errText.slice(0, 300)}`,
+        );
+      }
+
+      const data = (await elResp.json()) as { text?: string };
+      res.json({
+        text: (data.text ?? '').trim(),
+        language: 'en',
+        provider: 'elevenlabs',
+      });
+    } catch (err) {
+      console.error('ElevenLabs Transcribe error:', err);
+      const message =
+        err instanceof Error ? err.message : 'Audio transcription failed.';
+      const status = message.includes('ELEVENLABS_API_KEY') ? 503 : 500;
+      res.status(status).json({ error: message });
+    }
+  });
+
+  app.post('/api/tts', async (req: Request, res: Response) => {
+    try {
+      const { text } = req.body as { text?: string };
+      const cleaned = (text ?? '').trim();
+      if (!cleaned) {
+        res.status(400).json({ error: 'Text is required for speech synthesis.' });
+        return;
+      }
+
+      const apiKey = getElevenLabsApiKey();
+      const truncated = cleaned.slice(0, 3500);
+      let voiceId = await resolveElevenLabsVoiceId(apiKey);
+
+      const callElevenTts = async (vId: string, modelId: string) => {
+        return fetch(
+          `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(vId)}?output_format=mp3_44100_128`,
+          {
+            method: 'POST',
+            headers: {
+              'xi-api-key': apiKey,
+              'Content-Type': 'application/json',
+              Accept: 'audio/mpeg',
+            },
+            body: JSON.stringify({
+              text: truncated,
+              model_id: modelId,
+              ...(modelId === 'eleven_flash_v2_5' ? { language_code: 'en' } : {}),
+              voice_settings: {
+                stability: 0.5,
+                similarity_boost: 0.75,
+              },
+            }),
+          },
+        );
+      };
+
+      let elResp = await callElevenTts(voiceId, 'eleven_flash_v2_5');
+      if (elResp.status === 404 || elResp.status === 400) {
+        const discovered = await fetchFirstAvailableEnglishVoiceId(apiKey);
+        if (discovered && discovered !== voiceId) {
+          voiceId = discovered;
+          elResp = await callElevenTts(voiceId, 'eleven_flash_v2_5');
+        }
+      }
+      if (!elResp.ok && (elResp.status === 400 || elResp.status === 422)) {
+        elResp = await callElevenTts(voiceId, 'eleven_multilingual_v2');
+      }
+
+      if (!elResp.ok) {
+        const errText = await elResp.text();
+        throw new Error(
+          `ElevenLabs TTS error (${elResp.status}): ${errText.slice(0, 300)}`,
+        );
+      }
+
+      const audioBuffer = Buffer.from(await elResp.arrayBuffer());
+      if (audioBuffer.length === 0) {
+        res.status(502).json({ error: 'No audio returned by ElevenLabs.' });
+        return;
+      }
+
+      res.json({
+        audioBase64: audioBuffer.toString('base64'),
+        mimeType: 'audio/mpeg',
+        provider: 'elevenlabs',
+      });
+    } catch (err) {
+      console.error('ElevenLabs TTS error:', err);
+      const message =
+        err instanceof Error ? err.message : 'Speech synthesis failed.';
+      const status = message.includes('ELEVENLABS_API_KEY') ? 503 : 500;
+      res.status(status).json({ error: message });
     }
   });
 

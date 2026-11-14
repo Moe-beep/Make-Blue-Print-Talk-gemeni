@@ -384,7 +384,7 @@ LEARNED GROUND-TRUTH DOMAIN RULES (MANDATORY):
    - NEVER overwrite conflicting printed area summaries. Report both printed figures and arithmetic room sums and explain any discrepancy explicitly.
    - When asked about properties not stored in a BIM/2D file (e.g., glazing type, fire rating, or north facade when not georeferenced), explicitly state that the information is not available in the model instead of guessing.
 4. Response Style & Formatting (STRICT):
-   - Always answer strictly to the facts, concisely, and clearly structured.
+   - Always answer strictly in English, concisely, factually, and clearly structured.
    - NEVER use Markdown asterisks (**bold**, *italic*, or * bullet markers) or decorative formatting symbols.
    - Use short labeled lines, hyphenated bullets (- ), or numbered lists (1. ) without extra spaces or redundant blank lines.${customRules.length > 0 ? `\n\nUSER-TAUGHT RULES & CORRECTIONS (HIGHEST PRIORITY):\n${customRules.join('\n')}` : ''}`;
   }

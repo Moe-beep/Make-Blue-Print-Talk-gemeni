@@ -23,12 +23,16 @@ import {
   Loader2,
   Maximize2,
   MessageSquare,
+  Mic,
+  MicOff,
   Plus,
   Search,
   Send,
   Sparkles,
+  Square,
   Trash2,
   Upload,
+  Volume2,
   X,
 } from 'lucide-react';
 import { Viewport2D, type Viewport2DHandle } from './components/Viewport2D';
@@ -298,42 +302,42 @@ function buildFallbackHighlights(
     keywords: string[];
   }> = [
     {
-      regex: /\b(lamp|lamps|light|lights|luminaire|luminaires|pendant|sconce|ламп|светильн)/i,
+      regex: /\b(lamp|lamps|light|lights|luminaire|luminaires|pendant|sconce)/i,
       id: 'kw-lamps',
       label: 'Lamps & Luminaires',
       category: 'Lighting',
       keywords: ['lamp', 'light', 'luminaire', 'pendant', 'sconce'],
     },
     {
-      regex: /\b(switch|switches|dimmer|выключател)/i,
+      regex: /\b(switch|switches|dimmer)/i,
       id: 'kw-switches',
       label: 'Lighting Switches',
       category: 'All',
       keywords: ['switch', 'dimmer'],
     },
     {
-      regex: /\b(door|doors|двер)/i,
+      regex: /\b(door|doors)/i,
       id: 'kw-doors',
       label: 'Doors',
       category: 'Openings',
       keywords: ['door', 'ifcdoor', 'tür'],
     },
     {
-      regex: /\b(window|windows|окн|окон)/i,
+      regex: /\b(window|windows)/i,
       id: 'kw-windows',
       label: 'Windows',
       category: 'Openings',
       keywords: ['window', 'ifcwindow', 'fenster'],
     },
     {
-      regex: /\b(kitchen|кухн|küche)/i,
+      regex: /\b(kitchen|küche)/i,
       id: 'kw-kitchen',
       label: 'Kitchen',
       category: 'Space',
       keywords: ['kitchen', 'küche'],
     },
     {
-      regex: /\b(bath|bathroom|toilet|wc|sink|vanity|ванн|туалет|раковин)/i,
+      regex: /\b(bath|bathroom|toilet|wc|sink|vanity)/i,
       id: 'kw-bath-plumbing',
       label: 'Bath & Sanitary',
       category: 'Plumbing & Appliances',
@@ -411,15 +415,32 @@ export default function App() {
     null,
   );
 
-  // Chat Q&A state
+  // Chat Q&A + Voice I/O state (English only, ElevenLabs API)
   const [chatInput, setChatInput] = useState('');
   const [asking, setAsking] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [transcribingVoice, setTranscribingVoice] = useState(false);
+  const [elevenLabsReady, setElevenLabsReady] = useState(false);
+  const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
+  const [loadingTtsMsgId, setLoadingTtsMsgId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const viewport2DRef = useRef<Viewport2DHandle | null>(null);
   const viewport3DRef = useRef<Viewport3DHandle | null>(null);
   const projectFilesRef = useRef<ProjectFileEntry[]>([]);
   projectFilesRef.current = projectFiles;
+
+  // Voice dictation & TTS refs
+  const speechRecRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const baseDictationTextRef = useRef<string>('');
+  const voiceSessionActiveRef = useRef(false);
+  const chunkInFlightRef = useRef(false);
+  const chunkTimerRef = useRef<number | null>(null);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const audioObjectUrlRef = useRef<string | null>(null);
 
   // Derived active file entry
   const activeEntry = useMemo(
@@ -432,13 +453,33 @@ export default function App() {
   const chatMessages = activeEntry?.chatMessages ?? [];
   const calibrationNote = activeEntry?.calibrationNote ?? null;
 
-  // Cleanup all blob URLs strictly on component unmount
+  // Cleanup all blob URLs, microphone, and TTS audio strictly on unmount
   useEffect(() => {
     return () => {
+      voiceSessionActiveRef.current = false;
+      if (chunkTimerRef.current !== null) {
+        window.clearInterval(chunkTimerRef.current);
+      }
       for (const entry of projectFilesRef.current) {
         if (entry.asset.previewUrl) {
           URL.revokeObjectURL(entry.asset.previewUrl);
         }
+      }
+      try {
+        speechRecRef.current?.stop();
+      } catch {
+        // ignore
+      }
+      if (mediaRecorderRef.current?.state === 'recording') {
+        mediaRecorderRef.current.stop();
+      }
+      mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+      audioPlayerRef.current?.pause();
+      if (audioObjectUrlRef.current) {
+        URL.revokeObjectURL(audioObjectUrlRef.current);
+      }
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
       }
     };
   }, []);
@@ -447,6 +488,12 @@ export default function App() {
     fetch('/api/dataset/overview')
       .then((r) => r.json())
       .then((data: DatasetOverview) => setOverview(data))
+      .catch(() => {});
+    fetch('/api/voice/status')
+      .then((r) => r.json())
+      .then((data: { configured?: boolean }) =>
+        setElevenLabsReady(Boolean(data.configured)),
+      )
       .catch(() => {});
   }, []);
 
@@ -810,9 +857,344 @@ export default function App() {
     }
   };
 
+  const stopSpeaking = useCallback(() => {
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+      audioPlayerRef.current.currentTime = 0;
+      audioPlayerRef.current = null;
+    }
+    if (audioObjectUrlRef.current) {
+      URL.revokeObjectURL(audioObjectUrlRef.current);
+      audioObjectUrlRef.current = null;
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setSpeakingMsgId(null);
+    setLoadingTtsMsgId(null);
+  }, []);
+
+  const handleToggleSpeak = useCallback(
+    async (msgId: string, rawText: string) => {
+      if (speakingMsgId === msgId || loadingTtsMsgId === msgId) {
+        stopSpeaking();
+        return;
+      }
+      stopSpeaking();
+      const cleanText = formatCleanAnswer(rawText);
+      if (!cleanText) return;
+
+      const speakWithBrowserFallback = () => {
+        if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+          setSpeakingMsgId(null);
+          return;
+        }
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(cleanText);
+        utter.lang = 'en-US';
+        utter.rate = 1.02;
+        utter.onend = () => setSpeakingMsgId(null);
+        utter.onerror = () => setSpeakingMsgId(null);
+        setSpeakingMsgId(msgId);
+        window.speechSynthesis.speak(utter);
+      };
+
+      setLoadingTtsMsgId(msgId);
+      try {
+        const resp = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: cleanText }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.audioBase64) {
+          throw new Error(data.error || 'ElevenLabs TTS failed');
+        }
+        const byteChars = atob(data.audioBase64);
+        const byteNums = new Uint8Array(byteChars.length);
+        for (let i = 0; i < byteChars.length; i++) {
+          byteNums[i] = byteChars.charCodeAt(i);
+        }
+        const audioBlob = new Blob([byteNums], {
+          type: data.mimeType || 'audio/mpeg',
+        });
+        const url = URL.createObjectURL(audioBlob);
+        audioObjectUrlRef.current = url;
+        const audio = new Audio(url);
+        audioPlayerRef.current = audio;
+        audio.onended = () => {
+          stopSpeaking();
+        };
+        audio.onerror = () => {
+          stopSpeaking();
+          speakWithBrowserFallback();
+        };
+        setLoadingTtsMsgId(null);
+        setSpeakingMsgId(msgId);
+        await audio.play();
+      } catch {
+        setLoadingTtsMsgId(null);
+        speakWithBrowserFallback();
+      }
+    },
+    [loadingTtsMsgId, speakingMsgId, stopSpeaking],
+  );
+
+  const stopVoiceInput = useCallback(() => {
+    voiceSessionActiveRef.current = false;
+    if (chunkTimerRef.current !== null) {
+      window.clearInterval(chunkTimerRef.current);
+      chunkTimerRef.current = null;
+    }
+    if (speechRecRef.current) {
+      try {
+        speechRecRef.current.stop();
+      } catch {
+        // ignore
+      }
+      speechRecRef.current = null;
+    }
+    if (
+      mediaRecorderRef.current &&
+      mediaRecorderRef.current.state === 'recording'
+    ) {
+      mediaRecorderRef.current.stop();
+    }
+    setIsListening(false);
+  }, []);
+
+  const transcribeBlobWithElevenLabs = useCallback(
+    async (blob: Blob): Promise<string> => {
+      const buffer = await blob.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      const chunkSize = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+      }
+      const resp = await fetch('/api/transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          audioBase64: btoa(binary),
+          mimeType: blob.type || 'audio/webm',
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        throw new Error(data.error || 'ElevenLabs transcription failed.');
+      }
+      return String(data.text ?? '').trim();
+    },
+    [],
+  );
+
+  const startVoiceInput = useCallback(async () => {
+    if (!asset || asking) return;
+    if (isListening) {
+      stopVoiceInput();
+      return;
+    }
+    setErrorMsg(null);
+    baseDictationTextRef.current = chatInput.trim();
+    voiceSessionActiveRef.current = true;
+
+    const startMediaRecorderPipeline = async (): Promise<boolean> => {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setErrorMsg('Your browser does not support microphone recording.');
+        voiceSessionActiveRef.current = false;
+        return false;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaStreamRef.current = stream;
+        audioChunksRef.current = [];
+
+        const mimeCandidate = MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : MediaRecorder.isTypeSupported('audio/mp4')
+            ? 'audio/mp4'
+            : '';
+        const recorder = mimeCandidate
+          ? new MediaRecorder(stream, { mimeType: mimeCandidate })
+          : new MediaRecorder(stream);
+
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            audioChunksRef.current.push(e.data);
+          }
+        };
+
+        // Stream progressive chunks to ElevenLabs Scribe so spoken English writes live into chatInput
+        chunkTimerRef.current = window.setInterval(async () => {
+          if (
+            !voiceSessionActiveRef.current ||
+            chunkInFlightRef.current ||
+            audioChunksRef.current.length === 0
+          ) {
+            return;
+          }
+          chunkInFlightRef.current = true;
+          try {
+            const snapshot = new Blob(audioChunksRef.current, {
+              type: recorder.mimeType || 'audio/webm',
+            });
+            if (snapshot.size > 1200) {
+              const transcript = await transcribeBlobWithElevenLabs(snapshot);
+              if (transcript && voiceSessionActiveRef.current) {
+                const combined = [baseDictationTextRef.current, transcript]
+                  .filter(Boolean)
+                  .join(' ')
+                  .replace(/\s+/g, ' ');
+                setChatInput(combined);
+              }
+            }
+          } catch {
+            // Final transcription runs cleanly on stop
+          } finally {
+            chunkInFlightRef.current = false;
+          }
+        }, 2200);
+
+        recorder.onstop = async () => {
+          if (chunkTimerRef.current !== null) {
+            window.clearInterval(chunkTimerRef.current);
+            chunkTimerRef.current = null;
+          }
+          voiceSessionActiveRef.current = false;
+          stream.getTracks().forEach((t) => t.stop());
+          mediaStreamRef.current = null;
+          mediaRecorderRef.current = null;
+          setIsListening(false);
+
+          if (audioChunksRef.current.length === 0) return;
+          const fullBlob = new Blob(audioChunksRef.current, {
+            type: recorder.mimeType || 'audio/webm',
+          });
+          setTranscribingVoice(true);
+          try {
+            const finalText = await transcribeBlobWithElevenLabs(fullBlob);
+            if (finalText) {
+              const combined = [baseDictationTextRef.current, finalText]
+                .filter(Boolean)
+                .join(' ')
+                .replace(/\s+/g, ' ');
+              setChatInput(combined);
+            }
+          } catch (err) {
+            setErrorMsg(
+              err instanceof Error
+                ? err.message
+                : 'Could not transcribe voice message via ElevenLabs.',
+            );
+          } finally {
+            setTranscribingVoice(false);
+          }
+        };
+
+        mediaRecorderRef.current = recorder;
+        recorder.start(1000);
+        setIsListening(true);
+        return true;
+      } catch {
+        voiceSessionActiveRef.current = false;
+        setErrorMsg(
+          'Unable to access microphone. Please check browser permissions.',
+        );
+        return false;
+      }
+    };
+
+    // If ELEVENLABS_API_KEY is configured, stream directly via MediaRecorder -> ElevenLabs STT (English)
+    if (elevenLabsReady && typeof MediaRecorder !== 'undefined') {
+      await startMediaRecorderPipeline();
+      return;
+    }
+
+    // Fallback when ELEVENLABS_API_KEY is not yet configured: live browser SpeechRecognition (en-US)
+    const SpeechRecCtor =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
+
+    if (SpeechRecCtor) {
+      try {
+        const rec = new SpeechRecCtor();
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.lang = 'en-US';
+
+        let committedTranscript = '';
+        rec.onresult = (event: any) => {
+          let interim = '';
+          let nextCommitted = '';
+          for (let i = 0; i < event.results.length; i++) {
+            const res = event.results[i];
+            const piece = res?.[0]?.transcript ?? '';
+            if (res.isFinal) {
+              nextCommitted += piece + ' ';
+            } else {
+              interim += piece;
+            }
+          }
+          committedTranscript = nextCommitted;
+          const combined = [
+            baseDictationTextRef.current,
+            committedTranscript.trim(),
+            interim.trim(),
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .replace(/\s+/g, ' ');
+          setChatInput(combined);
+        };
+
+        rec.onerror = (ev: any) => {
+          const code = String(ev?.error || '');
+          setIsListening(false);
+          speechRecRef.current = null;
+          voiceSessionActiveRef.current = false;
+          if (code === 'not-allowed' || code === 'service-not-allowed') {
+            setErrorMsg(
+              'Microphone access denied. Please allow microphone permissions.',
+            );
+          } else if (code === 'network') {
+            void startMediaRecorderPipeline();
+          } else if (code !== 'aborted' && code !== 'no-speech') {
+            setErrorMsg(`Speech recognition error: ${code}`);
+          }
+        };
+
+        rec.onend = () => {
+          setIsListening(false);
+          speechRecRef.current = null;
+          voiceSessionActiveRef.current = false;
+        };
+
+        speechRecRef.current = rec;
+        rec.start();
+        setIsListening(true);
+        return;
+      } catch {
+        // Fall through to MediaRecorder + ElevenLabs /api/transcribe
+      }
+    }
+
+    await startMediaRecorderPipeline();
+  }, [
+    asking,
+    asset,
+    chatInput,
+    elevenLabsReady,
+    isListening,
+    stopVoiceInput,
+    transcribeBlobWithElevenLabs,
+  ]);
+
   const handleAskQuestion = async (questionText?: string) => {
     const q = (questionText ?? chatInput).trim();
     if (!q || !activeEntry || asking) return;
+    if (isListening) stopVoiceInput();
     const currentId = activeEntry.asset.id;
     setChatInput('');
     setActiveTab('assistant');
@@ -2291,10 +2673,49 @@ export default function App() {
                                   )}
                               </div>
 
-                              <div className="flex items-center gap-3 mt-1">
+                              <div className="flex items-center gap-2.5 mt-1.5">
                                 <span className="text-[10px] text-[#7A776F] font-mono tabular-nums">
                                   {msg.timestamp}
                                 </span>
+                                {msg.role === 'assistant' && displayContent && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      void handleToggleSpeak(
+                                        msg.id,
+                                        displayContent,
+                                      )
+                                    }
+                                    title={
+                                      speakingMsgId === msg.id
+                                        ? 'Stop playback'
+                                        : 'Read AI response aloud'
+                                    }
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded border transition-colors cursor-pointer ${
+                                      speakingMsgId === msg.id ||
+                                      loadingTtsMsgId === msg.id
+                                        ? 'bg-[#E8EFEA] text-[#1F4E3D] border-[#1F4E3D]/40'
+                                        : 'bg-white text-[#4A4842] border-[#E2DED4] hover:border-[#1F4E3D] hover:text-[#1F4E3D]'
+                                    }`}
+                                  >
+                                    {loadingTtsMsgId === msg.id ? (
+                                      <>
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                        Loading…
+                                      </>
+                                    ) : speakingMsgId === msg.id ? (
+                                      <>
+                                        <Square className="w-2.5 h-2.5 fill-current" />
+                                        Stop
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Volume2 className="w-3 h-3" />
+                                        Speak
+                                      </>
+                                    )}
+                                  </button>
+                                )}
                               </div>
                             </div>
                           );
@@ -2314,27 +2735,77 @@ export default function App() {
                         e.preventDefault();
                         void handleAskQuestion();
                       }}
-                      className="p-3 border-t border-[#E5E2DC] bg-[#FAF9F5] flex items-center gap-2"
+                      className="p-3 border-t border-[#E5E2DC] bg-[#FAF9F5] space-y-2"
                     >
-                      <input
-                        type="text"
-                        value={chatInput}
-                        onChange={(e) => setChatInput(e.target.value)}
-                        disabled={!asset || asking}
-                        placeholder={
-                          asset
-                            ? 'Ask about room size, lamps, doors, furniture…'
-                            : 'Select a file to start asking…'
-                        }
-                        className="flex-1 px-3 py-2 text-xs bg-white border border-[#E5E2DC] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1F4E3D] disabled:opacity-50"
-                      />
-                      <button
-                        type="submit"
-                        disabled={!asset || asking || !chatInput.trim()}
-                        className="inline-flex items-center justify-center px-3 py-2 bg-[#1F4E3D] text-white rounded-lg hover:bg-[#183E30] disabled:opacity-40 transition-colors cursor-pointer shrink-0"
-                      >
-                        <Send className="w-3.5 h-3.5" />
-                      </button>
+                      {(isListening || transcribingVoice) && (
+                        <div className="flex items-center justify-between px-2.5 py-1 rounded-md bg-[#E8EFEA] border border-[#C6D9CC] text-[11px] text-[#183E30]">
+                          <span className="flex items-center gap-2 font-medium">
+                            <span className="w-2 h-2 rounded-full bg-[#C26D2D] animate-pulse" />
+                            {transcribingVoice
+                              ? 'Transcribing English audio…'
+                              : 'Listening (English) — typing live into message box…'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={stopVoiceInput}
+                            className="font-semibold underline cursor-pointer"
+                          >
+                            Stop
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="flex items-end gap-1.5">
+                        <textarea
+                          rows={2}
+                          value={chatInput}
+                          onChange={(e) => setChatInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              void handleAskQuestion();
+                            }
+                          }}
+                          disabled={!asset || asking}
+                          placeholder={
+                            asset
+                              ? 'Ask a question or click the mic to speak in English…'
+                              : 'Select a file to start asking…'
+                          }
+                          className="flex-1 px-3 py-2 text-xs bg-white border border-[#E5E2DC] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1F4E3D] disabled:opacity-50 resize-none leading-relaxed"
+                        />
+                        <div className="flex flex-col gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => void startVoiceInput()}
+                            disabled={!asset || asking || transcribingVoice}
+                            title={
+                              isListening
+                                ? 'Stop voice dictation'
+                                : 'Voice input (English)'
+                            }
+                            className={`inline-flex items-center justify-center p-2 rounded-lg border transition-colors cursor-pointer disabled:opacity-40 ${
+                              isListening
+                                ? 'bg-[#C26D2D] text-white border-[#C26D2D]'
+                                : 'bg-white text-[#161614] border-[#DEDAD0] hover:border-[#1F4E3D] hover:text-[#1F4E3D]'
+                            }`}
+                          >
+                            {isListening ? (
+                              <MicOff className="w-3.5 h-3.5" />
+                            ) : (
+                              <Mic className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={!asset || asking || !chatInput.trim()}
+                            title="Send message"
+                            className="inline-flex items-center justify-center p-2 bg-[#1F4E3D] text-white rounded-lg hover:bg-[#183E30] disabled:opacity-40 transition-colors cursor-pointer"
+                          >
+                            <Send className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
                     </form>
                   </motion.div>
                 )}

@@ -1,0 +1,685 @@
+{
+  "datasetStats": {
+    "totalFilesInZip": 16902,
+    "totalQuestions": 127044,
+    "uniqueAnnotatedDrawings": 5939,
+    "questionTypes": {
+      "count": 111763,
+      "text": 836,
+      "area": 14243,
+      "volume": 138,
+      "length": 64
+    },
+    "sourceDistribution": {
+      "cubicasa5k": 85514,
+      "ifc_bench": 820,
+      "ifc_models": 3062,
+      "opening_design": 64,
+      "swiss_dwellings": 37584
+    }
+  },
+  "exemplars": {
+    "cubicasa5k:count": [
+      {
+        "path": "data/cubicasa5k/colorful-10052.png",
+        "question": "How many doors are shown on this floor plan? Count doorways fitted with a door; open doorways without a door leaf do not count.",
+        "answer": 5,
+        "unit": "count",
+        "type": "count"
+      },
+      {
+        "path": "data/cubicasa5k/colorful-10052.png",
+        "question": "How many windows are shown on this floor plan?",
+        "answer": 7,
+        "unit": "count",
+        "type": "count"
+      },
+      {
+        "path": "data/cubicasa5k/colorful-10052.png",
+        "question": "Kuinka monta ikkunaa pohjapiirustuksessa on?",
+        "answer": 7,
+        "unit": "count",
+        "type": "count"
+      },
+      {
+        "path": "data/cubicasa5k/colorful-10052.png",
+        "question": "How many bedrooms (makuuhuone, usually marked MH) are on this floor plan?",
+        "answer": 0,
+        "unit": "count",
+        "type": "count"
+      },
+      {
+        "path": "data/cubicasa5k/colorful-10052.png",
+        "question": "Kuinka monta makuuhuonetta (MH) pohjapiirustuksessa on?",
+        "answer": 0,
+        "unit": "count",
+        "type": "count"
+      },
+      {
+        "path": "data/cubicasa5k/colorful-10052.png",
+        "question": "How many saunas are on this floor plan?",
+        "answer": 1,
+        "unit": "count",
+        "type": "count"
+      }
+    ],
+    "ifc_bench:text": [
+      {
+        "path": "data/ifc_bench/4351_arc.ifc",
+        "question": "What modelling program and ifc standard were used to create this model?",
+        "answer": "The model is created using Autodesk Revit Architecture 2011 - 1.0, and utilizes IFC2X3.",
+        "unit": null,
+        "type": "text"
+      },
+      {
+        "path": "data/ifc_bench/4351_arc.ifc",
+        "question": "What is the space breakdown of the building grouped by floor with their respective areas and totals?",
+        "answer": "First Floor:\n- Kitchen: 33.2 m\u00b2\n- Space 4: 279.7 m\u00b2\n- Total First Floor Area: 312.9 m\u00b2\n\nSecond Floor:\n- Space 5: 197.4 m\u00b2\n- Balkon: 116.1 m\u00b2\n- Total Second Floor Area: 313.5 m\u00b2\n\nThird Floor:\n- Women's Room: 4.6 m\u00b2\n- Men's Room: 3.7 m\u00b2\n- Space 8: 179.8 m\u00b2\n- Total Third Floor Area: 188.1 m\u00b2\n\nRoof: 201.7 m\u00b2",
+        "unit": null,
+        "type": "text"
+      },
+      {
+        "path": "data/ifc_bench/4351_arc.ifc",
+        "question": "What is the total gross floor area of the building?",
+        "answer": "The IFC model does not store a single building-level GrossFloorArea value. Summing the stored GSA Space Areas.GSA BIM Area values across all six IfcSpace entities gives 7,517.262 sq ft (698.377 sq m), which is the model-grounded total available for this question.",
+        "unit": null,
+        "type": "text"
+      },
+      {
+        "path": "data/ifc_bench/4351_arc.ifc",
+        "question": "What are the floor-to-floor heights between all consecutive levels?",
+        "answer": "The floor-to-floor height between levels is:\n- 01 First Floor to 02 Second Floor: 4.72 m\n- 02 Second Floor to 03 Third Floor: 4.42 m\n- 03 Third Floor to 04 Roof: 3.96 m\n- 04 Roof to 05 TO Parapet: 0.91 m",
+        "unit": null,
+        "type": "text"
+      },
+      {
+        "path": "data/ifc_bench/4351_arc.ifc",
+        "question": "What door types are used in this building and their counts?",
+        "answer": "Door Types Used:\n- Single-Flush: 36\" x 84\": 10 doors (59%)\n- Single-Flush: 36\" x 80\": 4 doors (24%)\n- Door_Elevator_2-Speed_Reed: 2 doors (12%)\n- Double-Panel 1: 68\" x 80\": 1 door (6%) \n\nTotal Doors: 17",
+        "unit": null,
+        "type": "text"
+      },
+      {
+        "path": "data/ifc_bench/4351_arc.ifc",
+        "question": "What window types are used in this building and their respective counts?",
+        "answer": "Window Types Used:\n- Fixed: 36\" x 72\": 2 windows (67%)\n- Archtop with Trim: 108\" x 108\": 1 window (33%)\n\nTotal Windows: 3",
+        "unit": null,
+        "type": "text"
+      }
+    ],
+    "ifc_models:count": [
+      {
+        "path": "data/ifc_models/bsc-duplex_duplex-a-20110907.ifc",
+        "question": "How many doors are there in the model 'Duplex Apartment - architectural'?",
+        "answer": 14,
+        "unit": "count",
+        "type": "count"
+      },
+      {
+        "path": "data/ifc_models/bsc-duplex_duplex-a-20110907.ifc",
+        "question": "How many windows are there in the model 'Duplex Apartment - architectural'?",
+        "answer": 24,
+        "unit": "count",
+        "type": "count"
+      },
+      {
+        "path": "data/ifc_models/bsc-duplex_duplex-a-20110907.ifc",
+        "question": "How many rooms (spaces) are there in the model 'Duplex Apartment - architectural'?",
+        "answer": 21,
+        "unit": "count",
+        "type": "count"
+      },
+      {
+        "path": "data/ifc_models/bsc-duplex_duplex-a-20110907.ifc",
+        "question": "How many walls are there in the model 'Duplex Apartment - architectural'?",
+        "answer": 57,
+        "unit": "count",
+        "type": "count"
+      },
+      {
+        "path": "data/ifc_models/bsc-duplex_duplex-a-20110907.ifc",
+        "question": "How many beams are there in the model 'Duplex Apartment - architectural'?",
+        "answer": 8,
+        "unit": "count",
+        "type": "count"
+      },
+      {
+        "path": "data/ifc_models/bsc-duplex_duplex-a-20110907.ifc",
+        "question": "How many stairs are there in the model 'Duplex Apartment - architectural'?",
+        "answer": 2,
+        "unit": "count",
+        "type": "count"
+      }
+    ],
+    "ifc_models:area": [
+      {
+        "path": "data/ifc_models/bsc-duplex_duplex-a-20110907.ifc",
+        "question": "What is the net floor area of the room 'Living Room (A102)' on 'Level 1', in m\u00b2?",
+        "answer": 27.66,
+        "unit": "m2",
+        "type": "area"
+      },
+      {
+        "path": "data/ifc_models/bsc-duplex_duplex-a-20110907.ifc",
+        "question": "What is the total net floor area of all rooms (spaces) on 'Level 1', in m\u00b2?",
+        "answer": 126.34,
+        "unit": "m2",
+        "type": "area"
+      },
+      {
+        "path": "data/ifc_models/bsc-molio_molio-with-uris_plan-03-grundplan.pdf",
+        "question": "What is the total net side area of all walls on 'Grundplan', in m\u00b2?",
+        "answer": 505.175,
+        "unit": "m2",
+        "type": "area"
+      },
+      {
+        "path": "data/ifc_models/bsc-gymzaal-amersfoort_example-project-location_plan-01-00-begane-grond.pdf",
+        "question": "Wat is de netto vloeroppervlakte van de ruimte 'werkkast (3)' op '00 Begane grond', in m\u00b2?",
+        "answer": 1.26,
+        "unit": "m2",
+        "type": "area"
+      },
+      {
+        "path": "data/ifc_models/bsc-gymzaal-amersfoort_example-project-location_plan-01-00-begane-grond.pdf",
+        "question": "Wat is de totale netto vloeroppervlakte van alle ruimtes op '00 Begane grond', in m\u00b2?",
+        "answer": 1401.76,
+        "unit": "m2",
+        "type": "area"
+      },
+      {
+        "path": "data/ifc_models/bsc-gymzaal-amersfoort_example-project-location_plan-01-00-begane-grond.pdf",
+        "question": "Wat is de totale netto zijoppervlakte van alle wanden op '00 Begane grond', in m\u00b2?",
+        "answer": 712.911,
+        "unit": "m2",
+        "type": "area"
+      }
+    ],
+    "ifc_models:length": [
+      {
+        "path": "data/ifc_models/bsc-molio_molio-with-uris_plan-03-grundplan.pdf",
+        "question": "What is the total length of all walls on 'Grundplan', in metres?",
+        "answer": 185.129,
+        "unit": "m",
+        "type": "length"
+      },
+      {
+        "path": "data/ifc_models/bsc-gymzaal-amersfoort_example-project-location_plan-01-00-begane-grond.pdf",
+        "question": "Wat is de totale lengte van alle wanden op '00 Begane grond', in meter?",
+        "answer": 291.802,
+        "unit": "m",
+        "type": "length"
+      }
+    ],
+    "ifc_models:volume": [
+      {
+        "path": "data/ifc_models/bsc-molio_molio-with-uris_plan-03-grundplan.pdf",
+        "question": "What is the total net volume of all walls on 'Grundplan', in m\u00b3?",
+        "answer": 177.896,
+        "unit": "m3",
+        "type": "volume"
+      },
+      {
+        "path": "data/ifc_models/bsc-gymzaal-amersfoort_example-project-location_plan-01-00-begane-grond.pdf",
+        "question": "Wat is het totale netto volume van alle wanden op '00 Begane grond', in m\u00b3?",
+        "answer": 115.561,
+        "unit": "m3",
+        "type": "volume"
+      }
+    ],
+    "opening_design:count": [
+      {
+        "path": "data/opening_design/Sports_Complex/Sheets - Current Set/A-801 - Door and Finish Schedules & Wall Types.pdf",
+        "question": "On sheet A-801 of the Xcel Sports Complex drawings, how many doors (door numbers) are listed in the door schedule?",
+        "answer": 38,
+        "unit": "count",
+        "type": "count"
+      },
+      {
+        "path": "data/opening_design/Sports_Complex/Sheets - Current Set/A-701 - Restrooms.pdf",
+        "question": "On sheet A-701 (Restrooms) of the Xcel Sports Complex drawings, how many water closets are drawn in enlarged plan 6A 'Restrooms'?",
+        "answer": 2,
+        "unit": "count",
+        "type": "count"
+      },
+      {
+        "path": "data/opening_design/CTR/Most Current Set/Full size sheets/A700 - SCHEDULES.pdf",
+        "question": "On sheet A700 of the Cannery Trail Residences drawings (1750 N Oxford Ave, Eau Claire, WI), how many unit entry doors (type U01) are scheduled?",
+        "answer": 71,
+        "unit": "count",
+        "type": "count"
+      }
+    ],
+    "opening_design:text": [
+      {
+        "path": "data/opening_design/Sports_Complex/Sheets - Current Set/A-801 - Door and Finish Schedules & Wall Types.pdf",
+        "question": "On sheet A-801 of the Xcel Sports Complex drawings, what is the width of door 121.A?",
+        "answer": "5'-10 3/8\"",
+        "unit": null,
+        "type": "text"
+      },
+      {
+        "path": "data/opening_design/Sports_Complex/Sheets - Current Set/A-701 - Restrooms.pdf",
+        "question": "On sheet A-701 (Restrooms) of the Xcel Sports Complex drawings, how many water closets, lavatories and showers are drawn in enlarged plan 6B 'Restroom with Shower'?",
+        "answer": "1 water closet, 1 lavatory, 1 shower",
+        "unit": null,
+        "type": "text"
+      },
+      {
+        "path": "data/opening_design/CTR/Most Current Set/Full size sheets/A700 - SCHEDULES.pdf",
+        "question": "On sheet A700 of the Cannery Trail Residences drawings (1750 N Oxford Ave, Eau Claire, WI), what fire rating is scheduled for the unit doors (type U01)?",
+        "answer": "20 MIN.",
+        "unit": null,
+        "type": "text"
+      }
+    ],
+    "opening_design:area": [
+      {
+        "path": "data/opening_design/Sports_Complex/Sheets - Current Set/A-801 - Door and Finish Schedules & Wall Types.pdf",
+        "question": "On sheet A-801 of the Xcel Sports Complex drawings, what is the area of room 128 (Fieldhouse) in the finish room schedule?",
+        "answer": 29690,
+        "unit": "ft2",
+        "type": "area"
+      }
+    ],
+    "swiss_dwellings:count": [
+      {
+        "path": "data/swiss_dwellings/site3387_bldg5238_floor23498.pdf",
+        "question": "How many apartments (residential units) are shown on this floor plan?",
+        "answer": 2,
+        "unit": "count",
+        "type": "count"
+      },
+      {
+        "path": "data/swiss_dwellings/site3387_bldg5238_floor23498.pdf",
+        "question": "Wie viele Wohnungen sind auf diesem Grundriss dargestellt?",
+        "answer": 2,
+        "unit": "count",
+        "type": "count"
+      },
+      {
+        "path": "data/swiss_dwellings/site3387_bldg5238_floor23498.pdf",
+        "question": "How many rooms labelled 'Schlafzimmer' are there on this floor?",
+        "answer": 5,
+        "unit": "count",
+        "type": "count"
+      },
+      {
+        "path": "data/swiss_dwellings/site3387_bldg5238_floor23498.pdf",
+        "question": "How many rooms labelled 'Wohnen' are there on this floor?",
+        "answer": 2,
+        "unit": "count",
+        "type": "count"
+      },
+      {
+        "path": "data/swiss_dwellings/site3387_bldg5238_floor23498.pdf",
+        "question": "How many rooms labelled 'Bad' are there on this floor?",
+        "answer": 4,
+        "unit": "count",
+        "type": "count"
+      },
+      {
+        "path": "data/swiss_dwellings/site3387_bldg5238_floor23498.pdf",
+        "question": "How many rooms labelled 'Reduit' are there on this floor?",
+        "answer": 2,
+        "unit": "count",
+        "type": "count"
+      }
+    ],
+    "swiss_dwellings:area": [
+      {
+        "path": "data/swiss_dwellings/site3387_bldg5238_floor23498.pdf",
+        "question": "What is the net floor area of room 7.01 ('Balkon') in m\u00b2?",
+        "answer": 15.47,
+        "unit": "m2",
+        "type": "area"
+      },
+      {
+        "path": "data/swiss_dwellings/site3387_bldg5238_floor23498.pdf",
+        "question": "What is the total net area in m\u00b2 of all rooms labelled 'Schlafzimmer' on this floor?",
+        "answer": 70.55,
+        "unit": "m2",
+        "type": "area"
+      },
+      {
+        "path": "data/swiss_dwellings/site3387_bldg5238_floor23498.pdf",
+        "question": "What is the total net floor area in m\u00b2 of all numbered indoor rooms on this floor (excluding balconies, loggias, terraces and other outdoor spaces, shafts and voids)?",
+        "answer": 212.41,
+        "unit": "m2",
+        "type": "area"
+      }
+    ]
+  },
+  "samples": [
+    {
+      "id": "colorful-10052.png",
+      "title": "Finnish Floor Plan (colorful-10052.png)",
+      "source": "cubicasa5k",
+      "format": "png",
+      "zipPath": "junction-dataset/data/cubicasa5k/colorful-10052.png",
+      "comp": 0,
+      "comp_sz": 407909,
+      "uncomp_sz": 407909,
+      "loc_off": 1740,
+      "groundTruthQuestions": [
+        {
+          "question": "How many doors are shown on this floor plan? Count doorways fitted with a door; open doorways without a door leaf do not count.",
+          "answer": 5,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "How many windows are shown on this floor plan?",
+          "answer": 7,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "Kuinka monta ikkunaa pohjapiirustuksessa on?",
+          "answer": 7,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "How many bedrooms (makuuhuone, usually marked MH) are on this floor plan?",
+          "answer": 0,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "Kuinka monta makuuhuonetta (MH) pohjapiirustuksessa on?",
+          "answer": 0,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "How many saunas are on this floor plan?",
+          "answer": 1,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "Kuinka monta saunaa pohjapiirustuksessa on?",
+          "answer": 1,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "How many toilet bowls (WC seats) are drawn on this floor plan?",
+          "answer": 1,
+          "unit": "count",
+          "type": "count"
+        }
+      ]
+    },
+    {
+      "id": "colorful-1012.png",
+      "title": "Finnish Floor Plan (colorful-1012.png)",
+      "source": "cubicasa5k",
+      "format": "png",
+      "zipPath": "junction-dataset/data/cubicasa5k/colorful-1012.png",
+      "comp": 0,
+      "comp_sz": 138946,
+      "uncomp_sz": 138946,
+      "loc_off": 1774496,
+      "groundTruthQuestions": [
+        {
+          "question": "How many doors are shown on this floor plan? Count doorways fitted with a door; open doorways without a door leaf do not count.",
+          "answer": 9,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "How many windows are shown on this floor plan?",
+          "answer": 5,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "Kuinka monta ikkunaa pohjapiirustuksessa on?",
+          "answer": 5,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "How many bedrooms (makuuhuone, usually marked MH) are on this floor plan?",
+          "answer": 2,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "Kuinka monta makuuhuonetta (MH) pohjapiirustuksessa on?",
+          "answer": 2,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "How many kitchens (including kitchenettes, open kitchens and utility kitchens) are on this floor plan?",
+          "answer": 1,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "How many bathrooms or washrooms (e.g. KH, KPH, PH, PESUH, SH) are on this floor plan, not counting separate WC rooms?",
+          "answer": 1,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "How many separate WC rooms (toilet rooms marked WC) are on this floor plan?",
+          "answer": 1,
+          "unit": "count",
+          "type": "count"
+        }
+      ]
+    },
+    {
+      "id": "site3387_bldg5238_floor23498.png",
+      "title": "Swiss Apartment Plan (site3387_bldg5238_floor23498.png)",
+      "source": "swiss_dwellings",
+      "format": "png",
+      "zipPath": "junction-dataset/data/swiss_dwellings/site3387_bldg5238_floor23498.png",
+      "comp": 0,
+      "comp_sz": 254774,
+      "uncomp_sz": 254774,
+      "loc_off": 8782273723,
+      "groundTruthQuestions": [
+        {
+          "question": "How many apartments (residential units) are shown on this floor plan?",
+          "answer": 2,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "Wie viele Wohnungen sind auf diesem Grundriss dargestellt?",
+          "answer": 2,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "How many rooms labelled 'Schlafzimmer' are there on this floor?",
+          "answer": 5,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "How many rooms labelled 'Wohnen' are there on this floor?",
+          "answer": 2,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "How many rooms labelled 'Bad' are there on this floor?",
+          "answer": 4,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "How many rooms labelled 'Reduit' are there on this floor?",
+          "answer": 2,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "How many rooms labelled 'Balkon' are there on this floor?",
+          "answer": 4,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "How many rooms labelled 'Korridor' are there on this floor?",
+          "answer": 3,
+          "unit": "count",
+          "type": "count"
+        }
+      ]
+    },
+    {
+      "id": "site3387_bldg5238_floor23498.dxf",
+      "title": "Swiss Apartment CAD (site3387_bldg5238_floor23498.dxf)",
+      "source": "swiss_dwellings",
+      "format": "dxf",
+      "zipPath": "junction-dataset/data/swiss_dwellings/site3387_bldg5238_floor23498.dxf",
+      "comp": 8,
+      "comp_sz": 32537,
+      "uncomp_sz": 199873,
+      "loc_off": 8782193126,
+      "groundTruthQuestions": [
+        {
+          "question": "How many apartments (residential units) are shown on this floor plan?",
+          "answer": 2,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "Wie viele Wohnungen sind auf diesem Grundriss dargestellt?",
+          "answer": 2,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "How many rooms labelled 'Schlafzimmer' are there on this floor?",
+          "answer": 5,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "How many rooms labelled 'Wohnen' are there on this floor?",
+          "answer": 2,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "How many rooms labelled 'Bad' are there on this floor?",
+          "answer": 4,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "How many rooms labelled 'Reduit' are there on this floor?",
+          "answer": 2,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "How many rooms labelled 'Balkon' are there on this floor?",
+          "answer": 4,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "How many rooms labelled 'Korridor' are there on this floor?",
+          "answer": 3,
+          "unit": "count",
+          "type": "count"
+        }
+      ]
+    },
+    {
+      "id": "duplex_arc.ifc",
+      "title": "3D BIM Model (duplex_arc.ifc)",
+      "source": "ifc_bench",
+      "format": "ifc",
+      "zipPath": "junction-dataset/data/ifc_bench/duplex_arc.ifc",
+      "comp": 8,
+      "comp_sz": 352611,
+      "uncomp_sz": 1656153,
+      "loc_off": 5169655725,
+      "groundTruthQuestions": [
+        {
+          "question": "What is the total gross floor area of the building?",
+          "answer": "The information is not directly available in the BIM model and cannot be exactly calculated. However, it is estimated that the total gross floor area of the building is around 350 sqm.",
+          "unit": null,
+          "type": "text"
+        },
+        {
+          "question": "What is the height of the ceiling in room A203?",
+          "answer": "The height of the ceiling in room A203 is 2.58 m.",
+          "unit": null,
+          "type": "text"
+        },
+        {
+          "question": "Give me the names of all the rooms in the building.",
+          "answer": "The names of the rooms in the building are:\n- A101\n- A102\n- A103\n- A104\n- A105\n- A201\n- A202\n- A203\n- A204\n- A205\n- B101\n- B102\n- B103\n- B104\n- B105\n- B201\n- B202\n- B203\n- B204\n- B205\n- R301",
+          "unit": null,
+          "type": "text"
+        },
+        {
+          "question": "How many windows are there on the north facade?",
+          "answer": "Information not available in the BIM model.\nThe number of windows on the north facade cannot be determined because the BIM model is not georeferenced.",
+          "unit": null,
+          "type": "text"
+        },
+        {
+          "question": "What is the width of the door 1hOSvn6df7F8_7GcBWlRGQ ?",
+          "answer": "The width of the door with uuid 1hOSvn6df7F8_7GcBWlRGQ is 1.25 m.",
+          "unit": null,
+          "type": "text"
+        },
+        {
+          "question": "Are all internal doors compliant with accessibility requirements?",
+          "answer": "No, not all internal doors are compliant with accessibility requirements.",
+          "unit": null,
+          "type": "text"
+        },
+        {
+          "question": "What is the floor-to-floor height between the ground floor and first floor?",
+          "answer": "The floor-to-floor height between the ground floor and the first floor is 3.1 m.",
+          "unit": null,
+          "type": "text"
+        },
+        {
+          "question": "What is the estimated total area of glazed windows in the building?",
+          "answer": "This information is not available directly from the BIM model, so it cannot be calculated exactly. However, the total area of glazed windows can be estimated at around 66 sqm.",
+          "unit": null,
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "bsc-duplex_duplex-electrical-20121207.ifc",
+      "title": "3D BIM Model (bsc-duplex_duplex-electrical-20121207.ifc)",
+      "source": "ifc_models",
+      "format": "ifc",
+      "zipPath": "junction-dataset/data/ifc_models/bsc-duplex_duplex-electrical-20121207.ifc",
+      "comp": 8,
+      "comp_sz": 355008,
+      "uncomp_sz": 1602758,
+      "loc_off": 5440242025,
+      "groundTruthQuestions": [
+        {
+          "question": "How many rooms (spaces) are there in the model 'Duplex Apartment - electrical'?",
+          "answer": 1,
+          "unit": "count",
+          "type": "count"
+        },
+        {
+          "question": "How many light fixtures are there in the model 'Duplex Apartment - electrical'?",
+          "answer": 28,
+          "unit": "count",
+          "type": "count"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "name": "PlanMetrics",
+  "description": "AI-powered 2D and 3D architectural drawing, photo, and BIM analyzer trained on the Junction 2026 spatial dataset for room areas, lighting counts, and quantity takeoff.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

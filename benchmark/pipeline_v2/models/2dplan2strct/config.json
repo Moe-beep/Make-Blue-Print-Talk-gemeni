@@ -1,0 +1,9 @@
+{
+  "model_type": "rfdetr-medium",
+  "variant": "RFDETRMedium",
+  "resolution": 576,
+  "num_classes": 4,
+  "class_names": ["wall", "room", "door", "window"],
+  "checkpoint": "checkpoint_best_ema.pth",
+  "format": "rfdetr-pytorch"
+}

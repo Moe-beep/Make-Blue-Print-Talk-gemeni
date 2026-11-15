@@ -6,3 +6,19 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# pipeline (Python)
+pipeline/models/
+pipeline/out/
+__pycache__/
+*.pyc
+.venv/
+
+# pipeline benchmark (benchmark/README.md): runs and model weights are local only
+benchmark/runs/
+benchmark/pipeline_v2/models/**/*.onnx
+benchmark/pipeline_v2/models/**/*.pth
+benchmark/pipeline_v2/models/*.pkl
+benchmark/pipeline_v2/work/
+benchmark/pipeline_v2/facts/
+benchmark/pipeline_v2/out/

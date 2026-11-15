@@ -1,0 +1,11 @@
+pillow
+pydantic>=2
+numpy
+opencv-contrib-python
+pypdfium2
+paddleocr
+paddlepaddle
+# layout model, CPU build of PyTorch (install separately):
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+ifcopenshell>=0.8
+google-genai       # LLM agent (ask.py), needs GEMINI_API_KEY

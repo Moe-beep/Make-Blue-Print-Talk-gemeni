@@ -1,0 +1,25 @@
+# secrets: never into the image (pass keys with -e / the platform's secret settings)
+.env
+.env.*
+**/*.key
+**/id_ed25519*
+**/known_hosts
+
+# local tooling / build output
+.git
+.idea
+.vscode
+node_modules
+dist
+**/__pycache__
+**/*.pyc
+**/.venv
+**/.cache
+
+# pipeline: runtime output, test data (weights in pipeline/models/ ARE needed)
+pipeline/out
+pipeline/data
+pipeline/tests
+
+# benchmark (pipeline comparison) is not part of the app image
+benchmark

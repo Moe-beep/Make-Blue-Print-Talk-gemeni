@@ -1,0 +1,4155 @@
+{
+  "_meta": {
+    "description": "Field schema for the information requested by the questions. No values are filled in: a separate facts file produced by code must use these field names and types; null = unknown.",
+    "types": {
+      "int": "integer",
+      "real": "real number in the given unit",
+      "bool": "true / false",
+      "enum": "one of the listed values",
+      "string": "free text",
+      "object": "fixed sub-fields, listed in properties",
+      "map": "data-dependent keys described by key; every value follows items",
+      "list": "ordered list; every element follows items"
+    },
+    "units": "SI unless stated: m, m2, m3, mm, kW, deg, kgCO2e, %. Imperial drawing sets use ft2 and ft-in strings as written on the sheet.",
+    "origin": "origin external = data normally not contained in the drawing or BIM model (certificates, tests, product data, design loads, external databases). If an outcome depends only on external data it is CONDITIONAL; if it depends on missing design data it is NOT VERIFIABLE.",
+    "known_values": "labels seen in the source drawings; other values are allowed"
+  },
+  "schema": {
+    "floor_plan": {
+      "type": "object",
+      "description": "Information read from a 2D floor plan drawing (one dwelling or one storey of a residential building).",
+      "properties": {
+        "floor_count": {
+          "type": "int",
+          "description": "number of floors (storeys) shown on the floor plan"
+        },
+        "apartment_count": {
+          "type": "int",
+          "description": "number of apartments (residential units) shown on the floor plan"
+        },
+        "openings": {
+          "type": "object",
+          "description": "Doors and windows drawn on the plan.",
+          "properties": {
+            "window_count": {
+              "type": "int",
+              "description": "number of windows drawn"
+            },
+            "door_count": {
+              "type": "int",
+              "description": "number of doors drawn (interior and entrance doors together); only doorways fitted with a door leaf count, open doorways without a leaf do not"
+            }
+          }
+        },
+        "sanitary_fixtures": {
+          "type": "object",
+          "description": "Sanitary fixtures drawn on the plan.",
+          "properties": {
+            "toilet_count": {
+              "type": "int",
+              "description": "number of toilet bowls (WC seats) drawn"
+            },
+            "sink_and_washbasin_count": {
+              "type": "int",
+              "description": "number of sinks and wash basins, kitchen and bathroom combined; a double-bowl sink counts as one"
+            },
+            "washbasin_count": {
+              "type": "int",
+              "description": "number of washbasins (lavabos) drawn"
+            },
+            "shower_count": {
+              "type": "int",
+              "description": "number of showers drawn"
+            },
+            "bathtub_count": {
+              "type": "int",
+              "description": "number of bathtubs drawn"
+            },
+            "shower_and_bathtub_count": {
+              "type": "int",
+              "description": "total number of showers plus bathtubs drawn"
+            }
+          }
+        },
+        "room_type_counts": {
+          "type": "object",
+          "description": "Number of rooms of a given type on the plan.",
+          "properties": {
+            "bedroom_count": {
+              "type": "int",
+              "description": "number of bedrooms (makuuhuone, marked MH)"
+            },
+            "kitchen_count": {
+              "type": "int",
+              "description": "number of kitchens, including kitchenettes, open kitchens and utility kitchens"
+            },
+            "bathroom_count": {
+              "type": "int",
+              "description": "number of bathrooms/washrooms (e.g. KH, KPH, PH, PESUH, SH), not counting separate WC rooms"
+            },
+            "wc_room_count": {
+              "type": "int",
+              "description": "number of separate WC rooms (toilet rooms marked WC)"
+            },
+            "sauna_count": {
+              "type": "int",
+              "description": "number of saunas"
+            },
+            "balcony_count": {
+              "type": "int",
+              "description": "number of balconies, including glazed balconies"
+            }
+          }
+        },
+        "total_net_floor_area_m2": {
+          "type": "real",
+          "unit": "m2",
+          "description": "total net floor area of all numbered indoor rooms on the floor, excluding balconies, loggias, terraces and other outdoor spaces, shafts and voids"
+        },
+        "rooms_by_label": {
+          "type": "map",
+          "description": "Rooms grouped by the label written on the plan.",
+          "key": {
+            "type": "string",
+            "description": "room label exactly as written on the plan (local language)",
+            "known_values": [
+              "Zimmer",
+              "Schlafzimmer",
+              "Wohnen",
+              "Wohnen/Essen",
+              "Küche",
+              "Bad",
+              "Korridor",
+              "Reduit",
+              "Balkon",
+              "Loggia",
+              "Treppenhaus",
+              "Bürofläche",
+              "Pièce",
+              "Chambre à coucher",
+              "Séjour",
+              "Séjour/repas",
+              "Cuisine",
+              "Bain",
+              "Couloir",
+              "Réduit",
+              "Balcon",
+              "Cage d'escalier",
+              "Stanza",
+              "Camera da letto",
+              "Soggiorno",
+              "Soggiorno/pranzo",
+              "Cucina",
+              "Bagno",
+              "Corridoio",
+              "Ripostiglio",
+              "Balcone",
+              "Vano scala"
+            ]
+          },
+          "items": {
+            "type": "object",
+            "description": "Aggregates for one room label.",
+            "properties": {
+              "room_count": {
+                "type": "int",
+                "description": "number of rooms carrying this label on the floor"
+              },
+              "total_net_area_m2": {
+                "type": "real",
+                "unit": "m2",
+                "description": "sum of the net floor areas of the rooms carrying this label"
+              }
+            }
+          }
+        },
+        "apartments": {
+          "type": "map",
+          "description": "Apartments shown on the plan.",
+          "key": {
+            "type": "string",
+            "description": "apartment identifier as marked on the plan (A, B, C, …)"
+          },
+          "items": {
+            "type": "object",
+            "description": "One apartment.",
+            "properties": {
+              "net_floor_area_m2": {
+                "type": "real",
+                "unit": "m2",
+                "description": "net floor area of the apartment: sum of all its rooms except balconies, loggias, terraces and other outdoor spaces"
+              }
+            }
+          }
+        },
+        "rooms": {
+          "type": "map",
+          "description": "Individual numbered rooms.",
+          "key": {
+            "type": "string",
+            "description": "room number as printed on the plan (e.g. 1.04, U1.09)"
+          },
+          "items": {
+            "type": "object",
+            "description": "One room.",
+            "properties": {
+              "label": {
+                "type": "string",
+                "description": "room label written on the plan"
+              },
+              "net_floor_area_m2": {
+                "type": "real",
+                "unit": "m2",
+                "description": "net floor area of the room"
+              }
+            }
+          }
+        },
+        "detections": {
+          "type": "object",
+          "description": "What the recognition models or the vector geometry actually found on the drawing: the evidence behind the counts and areas above. Drawing coordinates are pixels of the source image (PDF: points), origin top-left for images, bottom-left for PDF pages.",
+          "properties": {
+            "image_width_px": {
+              "type": "int",
+              "description": "width of the analysed image"
+            },
+            "image_height_px": {
+              "type": "int",
+              "description": "height of the analysed image"
+            },
+            "detection_threshold": {
+              "type": "real",
+              "description": "minimum model confidence a detection needs to be counted; weaker detections are listed in rejected"
+            },
+            "rooms": {
+              "type": "list",
+              "description": "Rooms or spaces found on the drawing.",
+              "items": {
+                "type": "object",
+                "description": "One room.",
+                "properties": {
+                  "number": {
+                    "type": "string",
+                    "description": "room number as printed on the plan, if any"
+                  },
+                  "label": {
+                    "type": "string",
+                    "description": "room label as written, or the room class predicted by the model"
+                  },
+                  "model_class": {
+                    "type": "string",
+                    "description": "class name predicted by the model"
+                  },
+                  "apartment": {
+                    "type": "string",
+                    "description": "apartment identifier the room belongs to, if known"
+                  },
+                  "confidence": {
+                    "type": "real",
+                    "description": "model confidence from 0 to 1 (not a calibrated probability); empty for vector geometry"
+                  },
+                  "area_px": {
+                    "type": "real",
+                    "description": "area of the outline in drawing coordinates squared (px2 / pt2)"
+                  },
+                  "net_floor_area_m2": {
+                    "type": "real",
+                    "unit": "m2",
+                    "description": "net floor area, when the drawing scale is known"
+                  },
+                  "box_px": {
+                    "type": "list",
+                    "description": "bounding box [left, top, right, bottom] in drawing coordinates",
+                    "items": {
+                      "type": "real",
+                      "description": "coordinate"
+                    }
+                  },
+                  "polygon_px": {
+                    "type": "list",
+                    "description": "outline as consecutive x, y pairs [x0, y0, x1, y1, ...] in drawing coordinates",
+                    "items": {
+                      "type": "real",
+                      "description": "coordinate"
+                    }
+                  }
+                }
+              }
+            },
+            "doors": {
+              "type": "list",
+              "description": "Door symbols counted in openings.door_count.",
+              "items": {
+                "type": "object",
+                "description": "One door.",
+                "properties": {
+                  "confidence": {
+                    "type": "real",
+                    "description": "model confidence from 0 to 1 (not a calibrated probability); empty for vector geometry"
+                  },
+                  "area_px": {
+                    "type": "real",
+                    "description": "area of the symbol in drawing coordinates squared"
+                  },
+                  "box_px": {
+                    "type": "list",
+                    "description": "bounding box [left, top, right, bottom] in drawing coordinates",
+                    "items": {
+                      "type": "real",
+                      "description": "coordinate"
+                    }
+                  },
+                  "polygon_px": {
+                    "type": "list",
+                    "description": "outline as consecutive x, y pairs [x0, y0, x1, y1, ...] in drawing coordinates",
+                    "items": {
+                      "type": "real",
+                      "description": "coordinate"
+                    }
+                  }
+                }
+              }
+            },
+            "windows": {
+              "type": "list",
+              "description": "Window symbols counted in openings.window_count.",
+              "items": {
+                "type": "object",
+                "description": "One window.",
+                "properties": {
+                  "confidence": {
+                    "type": "real",
+                    "description": "model confidence from 0 to 1 (not a calibrated probability); empty for vector geometry"
+                  },
+                  "area_px": {
+                    "type": "real",
+                    "description": "area of the symbol in drawing coordinates squared"
+                  },
+                  "box_px": {
+                    "type": "list",
+                    "description": "bounding box [left, top, right, bottom] in drawing coordinates",
+                    "items": {
+                      "type": "real",
+                      "description": "coordinate"
+                    }
+                  },
+                  "polygon_px": {
+                    "type": "list",
+                    "description": "outline as consecutive x, y pairs [x0, y0, x1, y1, ...] in drawing coordinates",
+                    "items": {
+                      "type": "real",
+                      "description": "coordinate"
+                    }
+                  }
+                }
+              }
+            },
+            "sanitary": {
+              "type": "list",
+              "description": "Sanitary fixture symbols (toilet, sink, bathtub, ...).",
+              "items": {
+                "type": "object",
+                "description": "One fixture.",
+                "properties": {
+                  "category": {
+                    "type": "string",
+                    "description": "fixture category, e.g. toilet, sink, bathtub"
+                  },
+                  "confidence": {
+                    "type": "real",
+                    "description": "model confidence from 0 to 1 (not a calibrated probability); empty for vector geometry"
+                  },
+                  "area_px": {
+                    "type": "real",
+                    "description": "area of the symbol in drawing coordinates squared"
+                  },
+                  "box_px": {
+                    "type": "list",
+                    "description": "bounding box [left, top, right, bottom] in drawing coordinates",
+                    "items": {
+                      "type": "real",
+                      "description": "coordinate"
+                    }
+                  }
+                }
+              }
+            },
+            "furniture": {
+              "type": "list",
+              "description": "Furniture and equipment symbols (closet, sauna bench, fireplace, ...).",
+              "items": {
+                "type": "object",
+                "description": "One symbol.",
+                "properties": {
+                  "category": {
+                    "type": "string",
+                    "description": "symbol category, e.g. closet, sauna_bench, fireplace"
+                  },
+                  "confidence": {
+                    "type": "real",
+                    "description": "model confidence from 0 to 1 (not a calibrated probability); empty for vector geometry"
+                  },
+                  "area_px": {
+                    "type": "real",
+                    "description": "area of the symbol in drawing coordinates squared"
+                  },
+                  "box_px": {
+                    "type": "list",
+                    "description": "bounding box [left, top, right, bottom] in drawing coordinates",
+                    "items": {
+                      "type": "real",
+                      "description": "coordinate"
+                    }
+                  }
+                }
+              }
+            },
+            "walls": {
+              "type": "list",
+              "description": "Wall segments or wall boxes.",
+              "items": {
+                "type": "object",
+                "description": "One wall.",
+                "properties": {
+                  "length_px": {
+                    "type": "real",
+                    "description": "wall length in drawing coordinates"
+                  },
+                  "confidence": {
+                    "type": "real",
+                    "description": "model confidence from 0 to 1 (not a calibrated probability); empty for vector geometry"
+                  },
+                  "box_px": {
+                    "type": "list",
+                    "description": "bounding box [left, top, right, bottom] in drawing coordinates",
+                    "items": {
+                      "type": "real",
+                      "description": "coordinate"
+                    }
+                  },
+                  "segment_px": {
+                    "type": "list",
+                    "description": "centre line [x0, y0, x1, y1] in drawing coordinates, when the model gives one",
+                    "items": {
+                      "type": "real",
+                      "description": "coordinate"
+                    }
+                  }
+                }
+              }
+            },
+            "wall_junctions": {
+              "type": "list",
+              "description": "Points where wall segments meet (wall graph nodes).",
+              "items": {
+                "type": "object",
+                "description": "One junction.",
+                "properties": {
+                  "point_px": {
+                    "type": "list",
+                    "description": "position [x, y] in drawing coordinates",
+                    "items": {
+                      "type": "real",
+                      "description": "coordinate"
+                    }
+                  }
+                }
+              }
+            },
+            "storey_outlines": {
+              "type": "list",
+              "description": "Separate storey drawings found on the sheet.",
+              "items": {
+                "type": "object",
+                "description": "One storey drawing.",
+                "properties": {
+                  "box_px": {
+                    "type": "list",
+                    "description": "bounding box [left, top, right, bottom] in drawing coordinates",
+                    "items": {
+                      "type": "real",
+                      "description": "coordinate"
+                    }
+                  }
+                }
+              }
+            },
+            "rejected": {
+              "type": "list",
+              "description": "Detections below detection_threshold: not counted anywhere above, kept as evidence.",
+              "items": {
+                "type": "object",
+                "description": "One rejected detection.",
+                "properties": {
+                  "category": {
+                    "type": "string",
+                    "description": "what the model thought it was (door, window, toilet, ...)"
+                  },
+                  "confidence": {
+                    "type": "real",
+                    "description": "model confidence from 0 to 1 (not a calibrated probability); empty for vector geometry"
+                  },
+                  "box_px": {
+                    "type": "list",
+                    "description": "bounding box [left, top, right, bottom] in drawing coordinates",
+                    "items": {
+                      "type": "real",
+                      "description": "coordinate"
+                    }
+                  }
+                }
+              }
+            },
+            "texts": {
+              "type": "list",
+              "description": "Words read on the drawing (text detector + OCR); room labels among them are counted as rooms.",
+              "items": {
+                "type": "object",
+                "description": "One word.",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "description": "the word as read"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "description": "room_label when it names a room type (MH, KH, WC, S, PARVEKE, ...), else text"
+                  },
+                  "confidence": {
+                    "type": "real",
+                    "description": "reading (OCR) confidence from 0 to 1"
+                  },
+                  "detection_confidence": {
+                    "type": "real",
+                    "description": "text detector confidence from 0 to 1"
+                  },
+                  "box_px": {
+                    "type": "list",
+                    "description": "bounding box [left, top, right, bottom] in drawing coordinates",
+                    "items": {
+                      "type": "real",
+                      "description": "coordinate"
+                    }
+                  },
+                  "polygon_px": {
+                    "type": "list",
+                    "description": "outline as consecutive x, y pairs [x0, y0, x1, y1, ...] in drawing coordinates",
+                    "items": {
+                      "type": "real",
+                      "description": "coordinate"
+                    }
+                  }
+                }
+              }
+            },
+            "doorways": {
+              "type": "list",
+              "description": "Open doorways without a door leaf: not counted in openings.door_count.",
+              "items": {
+                "type": "object",
+                "description": "One doorway.",
+                "properties": {
+                  "confidence": {
+                    "type": "real",
+                    "description": "model confidence from 0 to 1 (not a calibrated probability); empty for vector geometry"
+                  },
+                  "area_px": {
+                    "type": "real",
+                    "description": "area of the symbol in drawing coordinates squared"
+                  },
+                  "box_px": {
+                    "type": "list",
+                    "description": "bounding box [left, top, right, bottom] in drawing coordinates",
+                    "items": {
+                      "type": "real",
+                      "description": "coordinate"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "bim_model": {
+      "type": "object",
+      "description": "Information extracted from an IFC/BIM model of a building.",
+      "properties": {
+        "model_name": {
+          "type": "string",
+          "description": "name of the model (e.g. 'Maleva tänav 18 korterelamu')"
+        },
+        "project": {
+          "type": "object",
+          "description": "IFC project.",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "project name"
+            },
+            "long_name": {
+              "type": "string",
+              "description": "project long name"
+            }
+          }
+        },
+        "site": {
+          "type": "object",
+          "description": "IFC site.",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "site name / location"
+            },
+            "latitude_deg": {
+              "type": "real",
+              "unit": "deg",
+              "description": "site latitude (decimal degrees)"
+            },
+            "longitude_deg": {
+              "type": "real",
+              "unit": "deg",
+              "description": "site longitude (decimal degrees)"
+            }
+          }
+        },
+        "building": {
+          "type": "object",
+          "description": "IFC building.",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "building name"
+            },
+            "type": {
+              "type": "string",
+              "description": "building type"
+            },
+            "usage": {
+              "type": "string",
+              "description": "building usage/occupancy/function"
+            },
+            "classification": {
+              "type": "string",
+              "description": "building classification"
+            }
+          }
+        },
+        "authoring": {
+          "type": "object",
+          "description": "Software and modelling standards.",
+          "properties": {
+            "application": {
+              "type": "string",
+              "description": "originating application"
+            },
+            "application_version": {
+              "type": "string",
+              "description": "application/exporter version"
+            },
+            "developer": {
+              "type": "string",
+              "description": "software developer"
+            },
+            "timestamp": {
+              "type": "string",
+              "description": "file time stamp (ISO 8601)"
+            },
+            "ifc_schema": {
+              "type": "enum",
+              "values": [
+                "IFC2X3",
+                "IFC4",
+                "IFC4X3",
+                "other"
+              ],
+              "description": "IFC schema version"
+            },
+            "model_view_definition": {
+              "type": "string",
+              "description": "model view definition"
+            },
+            "exchange_requirement": {
+              "type": "string",
+              "description": "exchange requirement"
+            }
+          }
+        },
+        "summary": {
+          "type": "object",
+          "description": "Building scale.",
+          "properties": {
+            "level_count": {
+              "type": "int",
+              "description": "number of levels (storeys)"
+            },
+            "footprint_area_m2": {
+              "type": "real",
+              "unit": "m2",
+              "description": "building footprint area"
+            },
+            "gross_floor_area_m2": {
+              "type": "real",
+              "unit": "m2",
+              "description": "total gross floor area"
+            },
+            "net_floor_area_m2": {
+              "type": "real",
+              "unit": "m2",
+              "description": "total net (usable) floor area, sum of spaces"
+            },
+            "total_floor_area_m2": {
+              "type": "real",
+              "unit": "m2",
+              "description": "total floor area as reported for the building when not qualified as gross or net"
+            },
+            "average_space_area_m2": {
+              "type": "real",
+              "unit": "m2",
+              "description": "average space size"
+            },
+            "bedroom_count": {
+              "type": "int",
+              "description": "number of bedrooms"
+            },
+            "bathroom_count": {
+              "type": "int",
+              "description": "number of bathrooms"
+            },
+            "rooms_with_outdoor_access_count": {
+              "type": "int",
+              "description": "number of rooms with access to outdoor space"
+            }
+          }
+        },
+        "element_counts": {
+          "type": "object",
+          "description": "Number of elements of each IFC category in the whole model.",
+          "properties": {
+            "door": {
+              "type": "int",
+              "description": "number of doors"
+            },
+            "window": {
+              "type": "int",
+              "description": "number of windows"
+            },
+            "space": {
+              "type": "int",
+              "description": "number of rooms/spaces (IfcSpace)"
+            },
+            "wall": {
+              "type": "int",
+              "description": "number of walls"
+            },
+            "curtain_wall": {
+              "type": "int",
+              "description": "number of curtain walls"
+            },
+            "column": {
+              "type": "int",
+              "description": "number of columns"
+            },
+            "beam": {
+              "type": "int",
+              "description": "number of beams"
+            },
+            "slab": {
+              "type": "int",
+              "description": "number of slabs (all categories)"
+            },
+            "floor_slab": {
+              "type": "int",
+              "description": "number of floor slabs"
+            },
+            "roof_slab": {
+              "type": "int",
+              "description": "number of roof slabs"
+            },
+            "stair": {
+              "type": "int",
+              "description": "number of stairs"
+            },
+            "stair_flight": {
+              "type": "int",
+              "description": "number of stair flights"
+            },
+            "ramp": {
+              "type": "int",
+              "description": "number of ramps"
+            },
+            "railing": {
+              "type": "int",
+              "description": "number of railings"
+            },
+            "covering": {
+              "type": "int",
+              "description": "number of coverings (IfcCovering)"
+            },
+            "furniture": {
+              "type": "int",
+              "description": "number of furniture elements"
+            },
+            "sanitary_fixture": {
+              "type": "int",
+              "description": "number of sanitary fixtures/terminals"
+            },
+            "structural_member": {
+              "type": "int",
+              "description": "number of structural members (IfcMember)"
+            },
+            "plate": {
+              "type": "int",
+              "description": "number of plates"
+            },
+            "foundation": {
+              "type": "int",
+              "description": "number of foundation elements (footings, piles)"
+            },
+            "structural_connection": {
+              "type": "int",
+              "description": "number of structural connection elements"
+            },
+            "roof_element": {
+              "type": "int",
+              "description": "number of roof elements (IfcRoof and roof assemblies)"
+            },
+            "mep_component": {
+              "type": "int",
+              "description": "number of MEP components (distribution elements)"
+            },
+            "structural_total": {
+              "type": "int",
+              "description": "total number of structural elements"
+            }
+          }
+        },
+        "levels": {
+          "type": "map",
+          "description": "Building levels.",
+          "key": {
+            "type": "string",
+            "description": "level (storey) name as in the model (e.g. '1.korrus', 'B01_OKRD')"
+          },
+          "items": {
+            "type": "object",
+            "description": "One building level (IfcBuildingStorey).",
+            "properties": {
+              "elevation_m": {
+                "type": "real",
+                "unit": "m",
+                "description": "elevation of the level"
+              },
+              "storey_height_m": {
+                "type": "real",
+                "unit": "m",
+                "description": "height of the storey"
+              },
+              "floor_to_floor_height_m": {
+                "type": "real",
+                "unit": "m",
+                "description": "vertical distance from the level immediately below"
+              },
+              "ceiling_height_m": {
+                "type": "real",
+                "unit": "m",
+                "description": "typical clear ceiling height on the level"
+              },
+              "program": {
+                "type": "string",
+                "description": "primary use/function of the level"
+              },
+              "space_count": {
+                "type": "int",
+                "description": "number of spaces on the level"
+              },
+              "net_floor_area_m2": {
+                "type": "real",
+                "unit": "m2",
+                "description": "total net floor area of all rooms/spaces on the level"
+              },
+              "net_floor_area_share_pct": {
+                "type": "real",
+                "unit": "%",
+                "description": "share of the building net floor area"
+              },
+              "gross_floor_area_m2": {
+                "type": "real",
+                "unit": "m2",
+                "description": "gross floor area of the level"
+              },
+              "gross_floor_area_share_pct": {
+                "type": "real",
+                "unit": "%",
+                "description": "share of the building gross floor area"
+              },
+              "element_counts": {
+                "type": "object",
+                "description": "Number of elements of each IFC category shown on the floor plan of the level.",
+                "properties": {
+                  "door": {
+                    "type": "int",
+                    "description": "number of doors"
+                  },
+                  "window": {
+                    "type": "int",
+                    "description": "number of windows"
+                  },
+                  "space": {
+                    "type": "int",
+                    "description": "number of rooms/spaces (IfcSpace)"
+                  },
+                  "wall": {
+                    "type": "int",
+                    "description": "number of walls"
+                  },
+                  "curtain_wall": {
+                    "type": "int",
+                    "description": "number of curtain walls"
+                  },
+                  "column": {
+                    "type": "int",
+                    "description": "number of columns"
+                  },
+                  "beam": {
+                    "type": "int",
+                    "description": "number of beams"
+                  },
+                  "slab": {
+                    "type": "int",
+                    "description": "number of slabs (all categories)"
+                  },
+                  "floor_slab": {
+                    "type": "int",
+                    "description": "number of floor slabs"
+                  },
+                  "roof_slab": {
+                    "type": "int",
+                    "description": "number of roof slabs"
+                  },
+                  "stair": {
+                    "type": "int",
+                    "description": "number of stairs"
+                  },
+                  "stair_flight": {
+                    "type": "int",
+                    "description": "number of stair flights"
+                  },
+                  "ramp": {
+                    "type": "int",
+                    "description": "number of ramps"
+                  },
+                  "railing": {
+                    "type": "int",
+                    "description": "number of railings"
+                  },
+                  "covering": {
+                    "type": "int",
+                    "description": "number of coverings (IfcCovering)"
+                  },
+                  "furniture": {
+                    "type": "int",
+                    "description": "number of furniture elements"
+                  },
+                  "sanitary_fixture": {
+                    "type": "int",
+                    "description": "number of sanitary fixtures/terminals"
+                  },
+                  "structural_member": {
+                    "type": "int",
+                    "description": "number of structural members (IfcMember)"
+                  },
+                  "plate": {
+                    "type": "int",
+                    "description": "number of plates"
+                  },
+                  "foundation": {
+                    "type": "int",
+                    "description": "number of foundation elements (footings, piles)"
+                  },
+                  "structural_connection": {
+                    "type": "int",
+                    "description": "number of structural connection elements"
+                  },
+                  "roof_element": {
+                    "type": "int",
+                    "description": "number of roof elements (IfcRoof and roof assemblies)"
+                  },
+                  "mep_component": {
+                    "type": "int",
+                    "description": "number of MEP components (distribution elements)"
+                  },
+                  "structural_total": {
+                    "type": "int",
+                    "description": "total number of structural elements"
+                  }
+                }
+              },
+              "quantities": {
+                "type": "object",
+                "description": "Element quantities summed over the level.",
+                "properties": {
+                  "wall_total_length_m": {
+                    "type": "real",
+                    "unit": "m",
+                    "description": "total length of all walls on the level"
+                  },
+                  "wall_net_side_area_m2": {
+                    "type": "real",
+                    "unit": "m2",
+                    "description": "total net side area of all walls on the level"
+                  },
+                  "wall_net_volume_m3": {
+                    "type": "real",
+                    "unit": "m3",
+                    "description": "total net volume of all walls on the level"
+                  },
+                  "slab_net_volume_m3": {
+                    "type": "real",
+                    "unit": "m3",
+                    "description": "total net volume of all slabs/decks and plates on the level"
+                  }
+                }
+              },
+              "spaces": {
+                "type": "map",
+                "description": "Spaces on the level.",
+                "key": {
+                  "type": "string",
+                  "description": "space identifier as in the model (IfcSpace Name/LongName, e.g. 'KORIDOR (119)', 'A203', '01.014')"
+                },
+                "items": {
+                  "type": "object",
+                  "description": "One room/space (IfcSpace).",
+                  "properties": {
+                    "number": {
+                      "type": "string",
+                      "description": "space number (IfcSpace Name)"
+                    },
+                    "name": {
+                      "type": "string",
+                      "description": "space name/function label (IfcSpace LongName)"
+                    },
+                    "function": {
+                      "type": "string",
+                      "description": "function of the space as named in the model"
+                    },
+                    "function_category": {
+                      "type": "enum",
+                      "values": [
+                        "office",
+                        "circulation",
+                        "meeting",
+                        "laboratory",
+                        "restroom",
+                        "technical",
+                        "storage",
+                        "residential",
+                        "other"
+                      ],
+                      "description": "normalised function category"
+                    },
+                    "dwelling_unit": {
+                      "type": "string",
+                      "description": "dwelling unit the space belongs to (e.g. house A)"
+                    },
+                    "net_floor_area_m2": {
+                      "type": "real",
+                      "unit": "m2",
+                      "description": "net floor area of the space"
+                    },
+                    "ceiling_height_m": {
+                      "type": "real",
+                      "unit": "m",
+                      "description": "clear ceiling height of the space"
+                    },
+                    "flooring_area_m2": {
+                      "type": "real",
+                      "unit": "m2",
+                      "description": "floor area to be covered with flooring"
+                    },
+                    "tile_area_m2": {
+                      "type": "real",
+                      "unit": "m2",
+                      "description": "area of tile finishes in the space (from finish quantities)"
+                    },
+                    "has_outdoor_access": {
+                      "type": "bool",
+                      "description": "space has direct access to an outdoor space"
+                    },
+                    "has_spanning_steel_beams": {
+                      "type": "bool",
+                      "description": "steel beams span the space"
+                    },
+                    "ceiling_guid": {
+                      "type": "string",
+                      "description": "IFC GlobalId of the ceiling element of the space"
+                    },
+                    "wall_types": {
+                      "type": "list",
+                      "description": "Wall types bounding the space.",
+                      "items": {
+                        "type": "object",
+                        "description": "One wall type.",
+                        "properties": {
+                          "wall_type": {
+                            "type": "string",
+                            "description": "wall type name"
+                          },
+                          "load_bearing_characteristic": {
+                            "type": "string",
+                            "description": "load-bearing role of the wall type in this space"
+                          }
+                        }
+                      }
+                    },
+                    "furniture": {
+                      "type": "map",
+                      "description": "Number of furniture items in the space per type.",
+                      "key": {
+                        "type": "string",
+                        "description": "furniture type name"
+                      },
+                      "items": {
+                        "type": "int",
+                        "description": "number of furniture items in the space of this type"
+                      }
+                    },
+                    "sanitary_equipment": {
+                      "type": "map",
+                      "description": "Number of sanitary items in the space per type.",
+                      "key": {
+                        "type": "string",
+                        "description": "sanitary equipment type (e.g. toilet, basin, shower)"
+                      },
+                      "items": {
+                        "type": "int",
+                        "description": "number of sanitary items in the space of this type"
+                      }
+                    }
+                  }
+                }
+              },
+              "spaces_by_function": {
+                "type": "map",
+                "description": "Spaces on the level grouped by function.",
+                "key": {
+                  "type": "string",
+                  "description": "function / space name (LongName)"
+                },
+                "items": {
+                  "type": "object",
+                  "description": "One function group.",
+                  "properties": {
+                    "space_count": {
+                      "type": "int",
+                      "description": "number of spaces with this function"
+                    },
+                    "total_area_m2": {
+                      "type": "real",
+                      "unit": "m2",
+                      "description": "total net area of the group"
+                    },
+                    "spaces": {
+                      "type": "map",
+                      "description": "Areas of the spaces in the group.",
+                      "key": {
+                        "type": "string",
+                        "description": "space number"
+                      },
+                      "items": {
+                        "type": "real",
+                        "unit": "m2",
+                        "description": "net floor area of the space"
+                      }
+                    }
+                  }
+                }
+              },
+              "toilet_rooms": {
+                "type": "object",
+                "description": "Toilet/WC and restroom spaces on the level.",
+                "properties": {
+                  "count": {
+                    "type": "int",
+                    "description": "number of toilet/WC/restroom spaces"
+                  },
+                  "total_area_m2": {
+                    "type": "real",
+                    "unit": "m2",
+                    "description": "total area of the toilet spaces"
+                  },
+                  "spaces": {
+                    "type": "map",
+                    "description": "Toilet spaces.",
+                    "key": {
+                      "type": "string",
+                      "description": "space number or name"
+                    },
+                    "items": {
+                      "type": "object",
+                      "description": "One toilet space.",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "description": "space name"
+                        },
+                        "net_floor_area_m2": {
+                          "type": "real",
+                          "unit": "m2",
+                          "description": "net floor area"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "individual_offices": {
+                "type": "object",
+                "description": "Individual (cellular) office rooms on the level, excluding open-plan and small office spaces.",
+                "properties": {
+                  "count": {
+                    "type": "int",
+                    "description": "number of individual office rooms"
+                  },
+                  "total_area_m2": {
+                    "type": "real",
+                    "unit": "m2",
+                    "description": "total area of the individual office rooms"
+                  }
+                }
+              },
+              "mep": {
+                "type": "object",
+                "description": "MEP systems serving the level.",
+                "properties": {
+                  "systems": {
+                    "type": "map",
+                    "description": "Major components per MEP system on the level.",
+                    "key": {
+                      "type": "string",
+                      "description": "system category",
+                      "values": [
+                        "heating",
+                        "plumbing",
+                        "ventilation",
+                        "cooling",
+                        "electrical",
+                        "lighting",
+                        "accessories",
+                        "other"
+                      ]
+                    },
+                    "items": {
+                      "type": "object",
+                      "description": "One system.",
+                      "properties": {
+                        "major_component_count": {
+                          "type": "int",
+                          "description": "number of major components"
+                        }
+                      }
+                    }
+                  },
+                  "primary_functions": {
+                    "type": "list",
+                    "description": "Primary MEP functions on the level.",
+                    "items": {
+                      "type": "string",
+                      "description": "function description"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "space_functions": {
+          "type": "object",
+          "description": "Space utilisation by function for the whole building.",
+          "properties": {
+            "function_count": {
+              "type": "int",
+              "description": "number of distinct functions"
+            },
+            "by_function": {
+              "type": "map",
+              "description": "Spaces per function.",
+              "key": {
+                "type": "string",
+                "description": "function / space name (LongName)"
+              },
+              "items": {
+                "type": "object",
+                "description": "One function.",
+                "properties": {
+                  "space_count": {
+                    "type": "int",
+                    "description": "number of spaces"
+                  },
+                  "total_area_m2": {
+                    "type": "real",
+                    "unit": "m2",
+                    "description": "total area"
+                  },
+                  "share_pct": {
+                    "type": "real",
+                    "unit": "%",
+                    "description": "share of the building area"
+                  },
+                  "average_area_m2": {
+                    "type": "real",
+                    "unit": "m2",
+                    "description": "average area per space"
+                  }
+                }
+              }
+            },
+            "by_category": {
+              "type": "map",
+              "description": "Spaces per function category.",
+              "key": {
+                "type": "string",
+                "description": "function category"
+              },
+              "items": {
+                "type": "object",
+                "description": "One category.",
+                "properties": {
+                  "space_count": {
+                    "type": "int",
+                    "description": "number of spaces"
+                  },
+                  "total_area_m2": {
+                    "type": "real",
+                    "unit": "m2",
+                    "description": "total area"
+                  },
+                  "share_pct": {
+                    "type": "real",
+                    "unit": "%",
+                    "description": "share of the building area"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "largest_space": {
+          "type": "object",
+          "description": "Largest room of the building.",
+          "properties": {
+            "number": {
+              "type": "string",
+              "description": "space number"
+            },
+            "name": {
+              "type": "string",
+              "description": "space name"
+            },
+            "function": {
+              "type": "string",
+              "description": "function"
+            },
+            "level": {
+              "type": "string",
+              "description": "level name"
+            },
+            "net_floor_area_m2": {
+              "type": "real",
+              "unit": "m2",
+              "description": "area"
+            },
+            "ceiling_height_m": {
+              "type": "real",
+              "unit": "m",
+              "description": "ceiling height"
+            }
+          }
+        },
+        "office_spaces": {
+          "type": "object",
+          "description": "Office spaces.",
+          "properties": {
+            "total_count": {
+              "type": "int",
+              "description": "total number of office spaces"
+            },
+            "by_type": {
+              "type": "map",
+              "description": "Office spaces per type.",
+              "key": {
+                "type": "string",
+                "description": "office type (open-plan, small, individual, …)"
+              },
+              "items": {
+                "type": "object",
+                "description": "One office type.",
+                "properties": {
+                  "count": {
+                    "type": "int",
+                    "description": "number of offices of the type"
+                  },
+                  "spaces": {
+                    "type": "list",
+                    "description": "Offices of the type.",
+                    "items": {
+                      "type": "object",
+                      "description": "One office.",
+                      "properties": {
+                        "number": {
+                          "type": "string",
+                          "description": "space number/identifier"
+                        },
+                        "name": {
+                          "type": "string",
+                          "description": "space name (LongName)"
+                        },
+                        "level": {
+                          "type": "string",
+                          "description": "level name"
+                        },
+                        "net_floor_area_m2": {
+                          "type": "real",
+                          "unit": "m2",
+                          "description": "net floor area"
+                        },
+                        "ceiling_height_m": {
+                          "type": "real",
+                          "unit": "m",
+                          "description": "clear ceiling height"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "dwelling_units": {
+          "type": "map",
+          "description": "Dwelling units (houses/apartments) in the model.",
+          "key": {
+            "type": "string",
+            "description": "unit identifier (e.g. house A, Duplex B)"
+          },
+          "items": {
+            "type": "object",
+            "description": "One dwelling unit.",
+            "properties": {
+              "room_count": {
+                "type": "int",
+                "description": "number of rooms in the unit"
+              },
+              "rooms": {
+                "type": "list",
+                "description": "Rooms of the unit.",
+                "items": {
+                  "type": "object",
+                  "description": "One room.",
+                  "properties": {
+                    "number": {
+                      "type": "string",
+                      "description": "room number"
+                    },
+                    "name": {
+                      "type": "string",
+                      "description": "room name"
+                    }
+                  }
+                }
+              },
+              "stair_step_count": {
+                "type": "int",
+                "description": "number of steps of the unit's stair"
+              },
+              "bathroom_tile_area_m2": {
+                "type": "real",
+                "unit": "m2",
+                "description": "total tile area in the unit's bathrooms"
+              }
+            }
+          }
+        },
+        "doors": {
+          "type": "object",
+          "description": "Doors of the model.",
+          "properties": {
+            "interior_count": {
+              "type": "int",
+              "description": "number of interior doors"
+            },
+            "exterior_count": {
+              "type": "int",
+              "description": "number of exterior doors"
+            },
+            "types": {
+              "type": "map",
+              "description": "Door types.",
+              "key": {
+                "type": "string",
+                "description": "door type name"
+              },
+              "items": {
+                "type": "object",
+                "description": "One door type.",
+                "properties": {
+                  "count": {
+                    "type": "int",
+                    "description": "number of doors of the type"
+                  },
+                  "share_pct": {
+                    "type": "real",
+                    "unit": "%",
+                    "description": "share of all doors"
+                  },
+                  "width_m": {
+                    "type": "real",
+                    "unit": "m",
+                    "description": "door width of the type"
+                  },
+                  "height_m": {
+                    "type": "real",
+                    "unit": "m",
+                    "description": "door height of the type"
+                  },
+                  "operation": {
+                    "type": "enum",
+                    "values": [
+                      "single_swing",
+                      "double_swing",
+                      "revolving",
+                      "sliding",
+                      "folding",
+                      "roll_up",
+                      "other"
+                    ],
+                    "description": "operation of the door"
+                  },
+                  "has_fire_rating": {
+                    "type": "bool",
+                    "description": "fire rating property is filled for the type"
+                  },
+                  "fire_rating": {
+                    "type": "string",
+                    "description": "fire rating of the type"
+                  }
+                }
+              }
+            },
+            "width_stats": {
+              "type": "object",
+              "description": "Statistics of door widths.",
+              "properties": {
+                "min_width_m": {
+                  "type": "real",
+                  "unit": "m",
+                  "description": "narrowest door width"
+                },
+                "min_width_type": {
+                  "type": "string",
+                  "description": "door type with the narrowest width"
+                },
+                "max_width_m": {
+                  "type": "real",
+                  "unit": "m",
+                  "description": "widest door width"
+                },
+                "average_width_m": {
+                  "type": "real",
+                  "unit": "m",
+                  "description": "average door width"
+                },
+                "doors_with_width_data": {
+                  "type": "int",
+                  "description": "number of doors with a width value"
+                }
+              }
+            },
+            "widest": {
+              "type": "list",
+              "description": "Doors (or door types) ordered by decreasing width.",
+              "items": {
+                "type": "object",
+                "description": "One entry.",
+                "properties": {
+                  "rank": {
+                    "type": "int",
+                    "description": "position in the ranking (1 = widest)"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "door name"
+                  },
+                  "type": {
+                    "type": "string",
+                    "description": "door type name"
+                  },
+                  "width_m": {
+                    "type": "real",
+                    "unit": "m",
+                    "description": "door width"
+                  }
+                }
+              }
+            },
+            "instances": {
+              "type": "map",
+              "description": "Individual doors.",
+              "key": {
+                "type": "string",
+                "description": "IFC GlobalId of the door"
+              },
+              "items": {
+                "type": "object",
+                "description": "One door.",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "door name"
+                  },
+                  "type": {
+                    "type": "string",
+                    "description": "door type name"
+                  },
+                  "level": {
+                    "type": "string",
+                    "description": "level name"
+                  },
+                  "is_external": {
+                    "type": "bool",
+                    "description": "door is external"
+                  },
+                  "width_m": {
+                    "type": "real",
+                    "unit": "m",
+                    "description": "door width"
+                  },
+                  "height_m": {
+                    "type": "real",
+                    "unit": "m",
+                    "description": "door height"
+                  },
+                  "fire_rating": {
+                    "type": "string",
+                    "description": "fire rating"
+                  },
+                  "accessibility_compliant": {
+                    "type": "bool",
+                    "description": "door meets accessibility requirements"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "windows": {
+          "type": "object",
+          "description": "Windows of the model.",
+          "properties": {
+            "types": {
+              "type": "map",
+              "description": "Window types.",
+              "key": {
+                "type": "string",
+                "description": "window type name"
+              },
+              "items": {
+                "type": "object",
+                "description": "One window type.",
+                "properties": {
+                  "count": {
+                    "type": "int",
+                    "description": "number of windows of the type"
+                  },
+                  "share_pct": {
+                    "type": "real",
+                    "unit": "%",
+                    "description": "share of all windows"
+                  },
+                  "width_m": {
+                    "type": "real",
+                    "unit": "m",
+                    "description": "window width of the type"
+                  },
+                  "height_m": {
+                    "type": "real",
+                    "unit": "m",
+                    "description": "window height of the type"
+                  },
+                  "count_by_level": {
+                    "type": "map",
+                    "description": "Windows of the type per level.",
+                    "key": {
+                      "type": "string",
+                      "description": "level name"
+                    },
+                    "items": {
+                      "type": "int",
+                      "description": "number of windows"
+                    }
+                  },
+                  "has_fire_rating": {
+                    "type": "bool",
+                    "description": "fire rating property is filled for the type"
+                  },
+                  "fire_rating": {
+                    "type": "string",
+                    "description": "fire rating of the type"
+                  }
+                }
+              }
+            },
+            "width_stats": {
+              "type": "object",
+              "description": "Statistics of window widths.",
+              "properties": {
+                "min_width_m": {
+                  "type": "real",
+                  "unit": "m",
+                  "description": "narrowest window width"
+                },
+                "min_width_type": {
+                  "type": "string",
+                  "description": "window type with the narrowest width"
+                },
+                "max_width_m": {
+                  "type": "real",
+                  "unit": "m",
+                  "description": "widest window width"
+                },
+                "max_width_type": {
+                  "type": "string",
+                  "description": "window type with the widest width"
+                },
+                "average_width_m": {
+                  "type": "real",
+                  "unit": "m",
+                  "description": "average window width"
+                }
+              }
+            },
+            "widest": {
+              "type": "list",
+              "description": "Windows ordered by decreasing width.",
+              "items": {
+                "type": "object",
+                "description": "One entry.",
+                "properties": {
+                  "rank": {
+                    "type": "int",
+                    "description": "position in the ranking (1 = widest)"
+                  },
+                  "type": {
+                    "type": "string",
+                    "description": "window type name"
+                  },
+                  "width_m": {
+                    "type": "real",
+                    "unit": "m",
+                    "description": "window width"
+                  }
+                }
+              }
+            },
+            "north_facade_count": {
+              "type": "int",
+              "description": "number of windows on the north facade (requires a georeferenced model / true north)"
+            },
+            "glazed_area_m2": {
+              "type": "real",
+              "unit": "m2",
+              "description": "total area of glazed windows"
+            },
+            "glazing_type": {
+              "type": "string",
+              "description": "type of glazing used in the windows"
+            },
+            "solar_heat_gain_coefficient": {
+              "type": "real",
+              "unit": "-",
+              "description": "solar heat gain coefficient (g-value) of the windows"
+            },
+            "warranty_period_years": {
+              "type": "real",
+              "unit": "years",
+              "origin": "external",
+              "description": "warranty period of the installed windows"
+            }
+          }
+        },
+        "walls": {
+          "type": "object",
+          "description": "Walls of the model.",
+          "properties": {
+            "exterior_count": {
+              "type": "int",
+              "description": "number of exterior walls"
+            },
+            "interior_count": {
+              "type": "int",
+              "description": "number of interior walls"
+            },
+            "load_bearing_count": {
+              "type": "int",
+              "description": "number of load-bearing walls"
+            },
+            "non_load_bearing_count": {
+              "type": "int",
+              "description": "number of non-load-bearing walls"
+            },
+            "load_bearing_share_pct": {
+              "type": "real",
+              "unit": "%",
+              "description": "share of load-bearing walls"
+            },
+            "load_bearing_classified_count": {
+              "type": "int",
+              "description": "number of walls with a load-bearing classification"
+            },
+            "load_bearing_classification_available": {
+              "type": "bool",
+              "description": "load-bearing property is present in the model"
+            },
+            "types": {
+              "type": "map",
+              "description": "Wall types.",
+              "key": {
+                "type": "string",
+                "description": "wall type name"
+              },
+              "items": {
+                "type": "object",
+                "description": "One wall type.",
+                "properties": {
+                  "count": {
+                    "type": "int",
+                    "description": "number of walls of the type"
+                  },
+                  "share_pct": {
+                    "type": "real",
+                    "unit": "%",
+                    "description": "share of all walls"
+                  },
+                  "exterior_count": {
+                    "type": "int",
+                    "description": "number of exterior walls of the type"
+                  },
+                  "exterior_share_pct": {
+                    "type": "real",
+                    "unit": "%",
+                    "description": "share of exterior walls"
+                  },
+                  "interior_count": {
+                    "type": "int",
+                    "description": "number of interior walls of the type"
+                  },
+                  "interior_share_pct": {
+                    "type": "real",
+                    "unit": "%",
+                    "description": "share of interior walls"
+                  },
+                  "load_bearing_count": {
+                    "type": "int",
+                    "description": "number of load-bearing walls of the type"
+                  },
+                  "thicknesses_mm": {
+                    "type": "list",
+                    "description": "Distinct thickness values found for the type.",
+                    "items": {
+                      "type": "real",
+                      "unit": "mm",
+                      "description": "thickness"
+                    }
+                  },
+                  "total_thickness_mm": {
+                    "type": "real",
+                    "unit": "mm",
+                    "description": "total thickness of the layer set"
+                  },
+                  "layers": {
+                    "type": "list",
+                    "description": "Material layers of the wall type, from outside to inside.",
+                    "items": {
+                      "type": "object",
+                      "description": "One layer.",
+                      "properties": {
+                        "order": {
+                          "type": "int",
+                          "description": "layer position (1 = outermost)"
+                        },
+                        "material": {
+                          "type": "string",
+                          "description": "material name"
+                        },
+                        "thickness_mm": {
+                          "type": "real",
+                          "unit": "mm",
+                          "description": "layer thickness"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "thickness_distribution": {
+              "type": "map",
+              "description": "Walls per thickness value.",
+              "key": {
+                "type": "string",
+                "description": "thickness in mm"
+              },
+              "items": {
+                "type": "object",
+                "description": "One thickness value.",
+                "properties": {
+                  "count": {
+                    "type": "int",
+                    "description": "number of walls"
+                  },
+                  "share_pct": {
+                    "type": "real",
+                    "unit": "%",
+                    "description": "share of all walls"
+                  }
+                }
+              }
+            },
+            "thickness_range_mm": {
+              "type": "object",
+              "description": "Range of wall thicknesses.",
+              "properties": {
+                "min": {
+                  "type": "real",
+                  "unit": "mm",
+                  "description": "minimum wall thickness"
+                },
+                "max": {
+                  "type": "real",
+                  "unit": "mm",
+                  "description": "maximum wall thickness"
+                }
+              }
+            },
+            "unique_material_count": {
+              "type": "object",
+              "description": "Number of distinct wall materials.",
+              "properties": {
+                "all": {
+                  "type": "int",
+                  "description": "in all walls"
+                },
+                "exterior": {
+                  "type": "int",
+                  "description": "in exterior walls"
+                },
+                "interior": {
+                  "type": "int",
+                  "description": "in interior walls"
+                }
+              }
+            },
+            "types_with_material_data": {
+              "type": "object",
+              "description": "Number of wall types with material data.",
+              "properties": {
+                "all": {
+                  "type": "int",
+                  "description": "all wall types"
+                },
+                "exterior": {
+                  "type": "int",
+                  "description": "exterior wall types"
+                },
+                "interior": {
+                  "type": "int",
+                  "description": "interior wall types"
+                }
+              }
+            },
+            "material_usage": {
+              "type": "object",
+              "description": "Distribution of materials across walls and wall types.",
+              "properties": {
+                "all": {
+                  "type": "map",
+                  "description": "Wall materials used in all walls.",
+                  "key": {
+                    "type": "string",
+                    "description": "material name"
+                  },
+                  "items": {
+                    "type": "object",
+                    "description": "Usage of one material.",
+                    "properties": {
+                      "wall_count": {
+                        "type": "int",
+                        "description": "number of walls containing the material"
+                      },
+                      "share_pct": {
+                        "type": "real",
+                        "unit": "%",
+                        "description": "share of walls containing the material"
+                      },
+                      "wall_count_by_type": {
+                        "type": "map",
+                        "description": "Walls containing the material, per wall type.",
+                        "key": {
+                          "type": "string",
+                          "description": "wall type name"
+                        },
+                        "items": {
+                          "type": "int",
+                          "description": "number of walls of the type"
+                        }
+                      }
+                    }
+                  }
+                },
+                "exterior": {
+                  "type": "map",
+                  "description": "Wall materials used in exterior walls.",
+                  "key": {
+                    "type": "string",
+                    "description": "material name"
+                  },
+                  "items": {
+                    "type": "object",
+                    "description": "Usage of one material.",
+                    "properties": {
+                      "wall_count": {
+                        "type": "int",
+                        "description": "number of walls containing the material"
+                      },
+                      "share_pct": {
+                        "type": "real",
+                        "unit": "%",
+                        "description": "share of walls containing the material"
+                      },
+                      "wall_count_by_type": {
+                        "type": "map",
+                        "description": "Walls containing the material, per wall type.",
+                        "key": {
+                          "type": "string",
+                          "description": "wall type name"
+                        },
+                        "items": {
+                          "type": "int",
+                          "description": "number of walls of the type"
+                        }
+                      }
+                    }
+                  }
+                },
+                "interior": {
+                  "type": "map",
+                  "description": "Wall materials used in interior walls.",
+                  "key": {
+                    "type": "string",
+                    "description": "material name"
+                  },
+                  "items": {
+                    "type": "object",
+                    "description": "Usage of one material.",
+                    "properties": {
+                      "wall_count": {
+                        "type": "int",
+                        "description": "number of walls containing the material"
+                      },
+                      "share_pct": {
+                        "type": "real",
+                        "unit": "%",
+                        "description": "share of walls containing the material"
+                      },
+                      "wall_count_by_type": {
+                        "type": "map",
+                        "description": "Walls containing the material, per wall type.",
+                        "key": {
+                          "type": "string",
+                          "description": "wall type name"
+                        },
+                        "items": {
+                          "type": "int",
+                          "description": "number of walls of the type"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "total_length_m": {
+              "type": "object",
+              "description": "Total wall lengths.",
+              "properties": {
+                "exterior": {
+                  "type": "real",
+                  "unit": "m",
+                  "description": "total length of exterior walls"
+                },
+                "interior": {
+                  "type": "real",
+                  "unit": "m",
+                  "description": "total length of interior walls"
+                },
+                "all": {
+                  "type": "real",
+                  "unit": "m",
+                  "description": "total length of all walls"
+                }
+              }
+            },
+            "length_share_pct": {
+              "type": "object",
+              "description": "Share of the total wall length.",
+              "properties": {
+                "exterior": {
+                  "type": "real",
+                  "unit": "%",
+                  "description": "share of exterior walls"
+                },
+                "interior": {
+                  "type": "real",
+                  "unit": "%",
+                  "description": "share of interior walls"
+                }
+              }
+            },
+            "exterior_wall_construction": {
+              "type": "object",
+              "description": "Build-up of the external walls.",
+              "properties": {
+                "thickness_mm": {
+                  "type": "real",
+                  "unit": "mm",
+                  "description": "total thickness of the external walls"
+                },
+                "insulation_type": {
+                  "type": "string",
+                  "description": "type of insulation in the external walls"
+                },
+                "insulation_thickness_mm": {
+                  "type": "real",
+                  "unit": "mm",
+                  "description": "insulation thickness"
+                },
+                "insulation_position": {
+                  "type": "string",
+                  "description": "position of the insulation in the build-up"
+                },
+                "layers": {
+                  "type": "list",
+                  "description": "Material layers of the external wall, from outside to inside.",
+                  "items": {
+                    "type": "object",
+                    "description": "One layer.",
+                    "properties": {
+                      "order": {
+                        "type": "int",
+                        "description": "layer position (1 = outermost)"
+                      },
+                      "material": {
+                        "type": "string",
+                        "description": "material name"
+                      },
+                      "thickness_mm": {
+                        "type": "real",
+                        "unit": "mm",
+                        "description": "layer thickness"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "main_structural_walls": {
+              "type": "list",
+              "description": "Walls acting as the main structure.",
+              "items": {
+                "type": "string",
+                "description": "wall description/type"
+              }
+            },
+            "curtain_wall_types": {
+              "type": "map",
+              "description": "Number of curtain walls per type.",
+              "key": {
+                "type": "string",
+                "description": "curtain wall type name"
+              },
+              "items": {
+                "type": "int",
+                "description": "number of curtain walls of this type"
+              }
+            }
+          }
+        },
+        "slabs": {
+          "type": "object",
+          "description": "Slabs of the model.",
+          "properties": {
+            "count_by_category": {
+              "type": "map",
+              "description": "Slabs per category.",
+              "key": {
+                "type": "string",
+                "description": "slab category",
+                "values": [
+                  "floor",
+                  "roof",
+                  "landing",
+                  "base",
+                  "ceiling",
+                  "other"
+                ]
+              },
+              "items": {
+                "type": "int",
+                "description": "number of slabs in the category"
+              }
+            },
+            "types": {
+              "type": "map",
+              "description": "Slab types.",
+              "key": {
+                "type": "string",
+                "description": "slab type name"
+              },
+              "items": {
+                "type": "object",
+                "description": "One slab type.",
+                "properties": {
+                  "category": {
+                    "type": "enum",
+                    "values": [
+                      "floor",
+                      "roof",
+                      "landing",
+                      "base",
+                      "ceiling",
+                      "other"
+                    ],
+                    "description": "slab category"
+                  },
+                  "count": {
+                    "type": "int",
+                    "description": "number of slabs of the type"
+                  },
+                  "share_pct": {
+                    "type": "real",
+                    "unit": "%",
+                    "description": "share of all slabs"
+                  },
+                  "thicknesses_mm": {
+                    "type": "list",
+                    "description": "Thickness values of the slabs of the type.",
+                    "items": {
+                      "type": "real",
+                      "unit": "mm",
+                      "description": "thickness"
+                    }
+                  },
+                  "average_thickness_mm": {
+                    "type": "real",
+                    "unit": "mm",
+                    "description": "average thickness"
+                  },
+                  "min_thickness_mm": {
+                    "type": "real",
+                    "unit": "mm",
+                    "description": "minimum thickness"
+                  },
+                  "max_thickness_mm": {
+                    "type": "real",
+                    "unit": "mm",
+                    "description": "maximum thickness"
+                  },
+                  "total_area_m2": {
+                    "type": "real",
+                    "unit": "m2",
+                    "description": "total area"
+                  },
+                  "total_volume_m3": {
+                    "type": "real",
+                    "unit": "m3",
+                    "description": "total volume"
+                  }
+                }
+              }
+            },
+            "instances": {
+              "type": "list",
+              "description": "Individual slabs.",
+              "items": {
+                "type": "object",
+                "description": "One slab.",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "description": "slab type name"
+                  },
+                  "category": {
+                    "type": "enum",
+                    "values": [
+                      "floor",
+                      "roof",
+                      "landing",
+                      "base",
+                      "ceiling",
+                      "other"
+                    ],
+                    "description": "slab category"
+                  },
+                  "area_m2": {
+                    "type": "real",
+                    "unit": "m2",
+                    "description": "slab area"
+                  },
+                  "volume_m3": {
+                    "type": "real",
+                    "unit": "m3",
+                    "description": "slab volume"
+                  },
+                  "thickness_mm": {
+                    "type": "real",
+                    "unit": "mm",
+                    "description": "slab thickness (stored or volume/area)"
+                  }
+                }
+              }
+            },
+            "total_volume_m3": {
+              "type": "real",
+              "unit": "m3",
+              "description": "total volume of all slabs"
+            },
+            "floor_slab_total_volume_m3": {
+              "type": "real",
+              "unit": "m3",
+              "description": "total volume of all floor slabs combined"
+            },
+            "floor_slab_volume_range_m3": {
+              "type": "object",
+              "description": "Range of floor slab volumes.",
+              "properties": {
+                "min": {
+                  "type": "real",
+                  "unit": "m3",
+                  "description": "smallest floor slab volume"
+                },
+                "max": {
+                  "type": "real",
+                  "unit": "m3",
+                  "description": "largest floor slab volume"
+                }
+              }
+            },
+            "ground_floor_slab": {
+              "type": "object",
+              "description": "Ground floor slab.",
+              "properties": {
+                "thickness_mm": {
+                  "type": "real",
+                  "unit": "mm",
+                  "description": "thickness"
+                },
+                "area_m2": {
+                  "type": "real",
+                  "unit": "m2",
+                  "description": "area"
+                },
+                "is_slab_on_grade": {
+                  "type": "bool",
+                  "description": "slab is on grade"
+                },
+                "concrete_specification": {
+                  "type": "string",
+                  "description": "concrete specification/strength class"
+                }
+              }
+            }
+          }
+        },
+        "columns": {
+          "type": "object",
+          "description": "Columns of the model.",
+          "properties": {
+            "types": {
+              "type": "map",
+              "description": "Column types.",
+              "key": {
+                "type": "string",
+                "description": "column type name"
+              },
+              "items": {
+                "type": "object",
+                "description": "One column type.",
+                "properties": {
+                  "count": {
+                    "type": "int",
+                    "description": "number of columns of the type"
+                  },
+                  "share_pct": {
+                    "type": "real",
+                    "unit": "%",
+                    "description": "share of all columns"
+                  },
+                  "material": {
+                    "type": "string",
+                    "description": "column material"
+                  },
+                  "dimensions": {
+                    "type": "list",
+                    "description": "Section dimensions found for the type.",
+                    "items": {
+                      "type": "object",
+                      "description": "One section size.",
+                      "properties": {
+                        "shape": {
+                          "type": "enum",
+                          "values": [
+                            "rectangular",
+                            "circular",
+                            "other"
+                          ],
+                          "description": "section shape"
+                        },
+                        "width_mm": {
+                          "type": "real",
+                          "unit": "mm",
+                          "description": "section width (rectangular)"
+                        },
+                        "depth_mm": {
+                          "type": "real",
+                          "unit": "mm",
+                          "description": "section depth (rectangular)"
+                        },
+                        "diameter_mm": {
+                          "type": "real",
+                          "unit": "mm",
+                          "description": "section diameter (circular)"
+                        },
+                        "count": {
+                          "type": "int",
+                          "description": "number of elements with this size"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "shape_distribution": {
+              "type": "object",
+              "description": "Columns per section shape.",
+              "properties": {
+                "rectangular": {
+                  "type": "int",
+                  "description": "number of rectangular columns"
+                },
+                "circular": {
+                  "type": "int",
+                  "description": "number of circular columns"
+                }
+              }
+            },
+            "size_distribution": {
+              "type": "map",
+              "description": "Columns per section size.",
+              "key": {
+                "type": "string",
+                "description": "section size label (width x depth or diameter)"
+              },
+              "items": {
+                "type": "object",
+                "description": "One size.",
+                "properties": {
+                  "count": {
+                    "type": "int",
+                    "description": "number of columns"
+                  },
+                  "share_pct": {
+                    "type": "real",
+                    "unit": "%",
+                    "description": "share of all columns"
+                  }
+                }
+              }
+            },
+            "material_distribution": {
+              "type": "map",
+              "description": "Columns per material.",
+              "key": {
+                "type": "string",
+                "description": "material"
+              },
+              "items": {
+                "type": "int",
+                "description": "number of columns"
+              }
+            }
+          }
+        },
+        "beams": {
+          "type": "object",
+          "description": "Beams of the model.",
+          "properties": {
+            "types": {
+              "type": "map",
+              "description": "Beam types.",
+              "key": {
+                "type": "string",
+                "description": "beam type name"
+              },
+              "items": {
+                "type": "object",
+                "description": "One beam type.",
+                "properties": {
+                  "count": {
+                    "type": "int",
+                    "description": "number of beams of the type"
+                  },
+                  "share_pct": {
+                    "type": "real",
+                    "unit": "%",
+                    "description": "share of all beams"
+                  },
+                  "profile": {
+                    "type": "string",
+                    "description": "section profile/size as named in the type"
+                  }
+                }
+              }
+            },
+            "spans": {
+              "type": "list",
+              "description": "Beam spans and sizes.",
+              "items": {
+                "type": "object",
+                "description": "One beam.",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "description": "beam type"
+                  },
+                  "span_m": {
+                    "type": "real",
+                    "unit": "m",
+                    "description": "span"
+                  },
+                  "size": {
+                    "type": "string",
+                    "description": "section size"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "structure": {
+          "type": "object",
+          "description": "Structural system.",
+          "properties": {
+            "system_type": {
+              "type": "string",
+              "description": "structural system type"
+            },
+            "grid_determination": {
+              "type": "string",
+              "description": "how the structural grid is determined"
+            },
+            "vertical_load_path": {
+              "type": "string",
+              "description": "typical load path for vertical loads"
+            },
+            "load_bearing_elements": {
+              "type": "object",
+              "description": "Load-bearing structural elements.",
+              "properties": {
+                "beams_load_bearing": {
+                  "type": "int",
+                  "description": "load-bearing beams"
+                },
+                "beams_total": {
+                  "type": "int",
+                  "description": "all beams"
+                },
+                "columns_load_bearing": {
+                  "type": "int",
+                  "description": "load-bearing columns"
+                },
+                "columns_total": {
+                  "type": "int",
+                  "description": "all columns"
+                },
+                "total_load_bearing": {
+                  "type": "int",
+                  "description": "total load-bearing elements"
+                }
+              }
+            },
+            "element_ratios_pct": {
+              "type": "object",
+              "description": "Share of each element type among the structural elements.",
+              "properties": {
+                "beam": {
+                  "type": "real",
+                  "unit": "%",
+                  "description": "beams"
+                },
+                "column": {
+                  "type": "real",
+                  "unit": "%",
+                  "description": "columns"
+                },
+                "slab": {
+                  "type": "real",
+                  "unit": "%",
+                  "description": "slabs"
+                }
+              }
+            },
+            "building_characteristics": {
+              "type": "list",
+              "description": "Structural characteristics of the building.",
+              "items": {
+                "type": "string",
+                "description": "characteristic"
+              }
+            },
+            "efficiency_rating": {
+              "type": "string",
+              "description": "overall structural efficiency rating"
+            },
+            "materials": {
+              "type": "list",
+              "description": "Materials used for the structural system.",
+              "items": {
+                "type": "string",
+                "description": "material name"
+              }
+            },
+            "concrete_volume": {
+              "type": "object",
+              "description": "Structural concrete volume.",
+              "properties": {
+                "total_m3": {
+                  "type": "real",
+                  "unit": "m3",
+                  "description": "total structural concrete volume"
+                },
+                "elements_with_volume_data": {
+                  "type": "int",
+                  "description": "number of elements with volume data"
+                },
+                "by_element_type": {
+                  "type": "map",
+                  "description": "Concrete volume per element type.",
+                  "key": {
+                    "type": "string",
+                    "description": "element type (beams, columns, slabs, …)"
+                  },
+                  "items": {
+                    "type": "real",
+                    "unit": "m3",
+                    "description": "volume"
+                  }
+                }
+              }
+            },
+            "member_types": {
+              "type": "map",
+              "description": "Structural member types.",
+              "key": {
+                "type": "string",
+                "description": "member type name"
+              },
+              "items": {
+                "type": "object",
+                "description": "One member type.",
+                "properties": {
+                  "count": {
+                    "type": "int",
+                    "description": "number of members"
+                  },
+                  "share_pct": {
+                    "type": "real",
+                    "unit": "%",
+                    "description": "share of all members"
+                  }
+                }
+              }
+            },
+            "live_load_capacity_kN_m2": {
+              "type": "real",
+              "unit": "kN/m2",
+              "origin": "external",
+              "description": "live load capacity of the floors"
+            },
+            "foundation": {
+              "type": "object",
+              "description": "Foundation.",
+              "properties": {
+                "system": {
+                  "type": "string",
+                  "description": "foundation system"
+                },
+                "depth_mm": {
+                  "type": "real",
+                  "unit": "mm",
+                  "description": "depth of the foundation"
+                },
+                "concrete_volume_m3": {
+                  "type": "real",
+                  "unit": "m3",
+                  "description": "concrete volume of the foundation"
+                }
+              }
+            }
+          }
+        },
+        "roof": {
+          "type": "object",
+          "description": "Roof.",
+          "properties": {
+            "structure_type": {
+              "type": "string",
+              "description": "roof structure type"
+            },
+            "element_types": {
+              "type": "map",
+              "description": "Roof element types.",
+              "key": {
+                "type": "string",
+                "description": "roof element type name"
+              },
+              "items": {
+                "type": "object",
+                "description": "One roof element type.",
+                "properties": {
+                  "count": {
+                    "type": "int",
+                    "description": "number of elements"
+                  },
+                  "share_pct": {
+                    "type": "real",
+                    "unit": "%",
+                    "description": "share of roof elements"
+                  }
+                }
+              }
+            },
+            "roofing_material": {
+              "type": "string",
+              "description": "roofing material"
+            },
+            "vapor_barrier_count": {
+              "type": "int",
+              "description": "number of vapour barriers in the roof build-up"
+            },
+            "lifespan_data_available": {
+              "type": "bool",
+              "description": "expected-life property is filled in the model"
+            },
+            "expected_lifespan_years": {
+              "type": "real",
+              "unit": "years",
+              "origin": "external",
+              "description": "expected lifespan of the roofing material"
+            }
+          }
+        },
+        "circulation": {
+          "type": "object",
+          "description": "Stairs and vertical circulation.",
+          "properties": {
+            "stair_types": {
+              "type": "map",
+              "description": "Number of stairs per type.",
+              "key": {
+                "type": "string",
+                "description": "stair type name"
+              },
+              "items": {
+                "type": "int",
+                "description": "number of stairs of this type"
+              }
+            },
+            "staircase_assembly_count": {
+              "type": "int",
+              "description": "number of staircase assemblies"
+            },
+            "elevator_count": {
+              "type": "int",
+              "description": "number of elevators (elevator shafts)"
+            },
+            "elevator_shaft_space_count": {
+              "type": "int",
+              "description": "number of elevator-shaft spaces"
+            },
+            "escalator_count": {
+              "type": "int",
+              "description": "number of escalators"
+            },
+            "railing_types": {
+              "type": "map",
+              "description": "Number of railings per type.",
+              "key": {
+                "type": "string",
+                "description": "railing type name"
+              },
+              "items": {
+                "type": "int",
+                "description": "number of railings of this type"
+              }
+            }
+          }
+        },
+        "coverings_and_ceilings": {
+          "type": "object",
+          "description": "Coverings and ceilings.",
+          "properties": {
+            "covering_types": {
+              "type": "map",
+              "description": "Number of coverings per type.",
+              "key": {
+                "type": "string",
+                "description": "covering type name"
+              },
+              "items": {
+                "type": "int",
+                "description": "number of coverings of this type"
+              }
+            },
+            "ceiling_element_count": {
+              "type": "int",
+              "description": "number of ceiling elements"
+            },
+            "ceiling_covering_count": {
+              "type": "int",
+              "description": "number of ceiling coverings"
+            },
+            "roof_slabs_as_ceilings_count": {
+              "type": "int",
+              "description": "roof slabs acting as ceilings"
+            },
+            "ceiling_types": {
+              "type": "map",
+              "description": "Ceiling types.",
+              "key": {
+                "type": "string",
+                "description": "ceiling type name"
+              },
+              "items": {
+                "type": "object",
+                "description": "One ceiling type.",
+                "properties": {
+                  "count": {
+                    "type": "int",
+                    "description": "number of elements"
+                  },
+                  "total_thickness_mm": {
+                    "type": "real",
+                    "unit": "mm",
+                    "description": "total thickness"
+                  },
+                  "layers": {
+                    "type": "list",
+                    "description": "Material layers of the ceiling type, from outside to inside.",
+                    "items": {
+                      "type": "object",
+                      "description": "One layer.",
+                      "properties": {
+                        "order": {
+                          "type": "int",
+                          "description": "layer position (1 = outermost)"
+                        },
+                        "material": {
+                          "type": "string",
+                          "description": "material name"
+                        },
+                        "thickness_mm": {
+                          "type": "real",
+                          "unit": "mm",
+                          "description": "layer thickness"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "ceiling_materials": {
+              "type": "list",
+              "description": "Ceiling materials.",
+              "items": {
+                "type": "string",
+                "description": "material name"
+              }
+            },
+            "uniform_ceiling_height_m": {
+              "type": "real",
+              "unit": "m",
+              "description": "ceiling height when all rooms share the same height"
+            },
+            "tallest_spaces": {
+              "type": "list",
+              "description": "Spaces ordered by decreasing ceiling height.",
+              "items": {
+                "type": "object",
+                "description": "One space.",
+                "properties": {
+                  "number": {
+                    "type": "string",
+                    "description": "space number/identifier"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "space name (LongName)"
+                  },
+                  "level": {
+                    "type": "string",
+                    "description": "level name"
+                  },
+                  "net_floor_area_m2": {
+                    "type": "real",
+                    "unit": "m2",
+                    "description": "net floor area"
+                  },
+                  "ceiling_height_m": {
+                    "type": "real",
+                    "unit": "m",
+                    "description": "clear ceiling height"
+                  }
+                }
+              }
+            },
+            "lowest_spaces": {
+              "type": "list",
+              "description": "Spaces ordered by increasing ceiling height.",
+              "items": {
+                "type": "object",
+                "description": "One space.",
+                "properties": {
+                  "number": {
+                    "type": "string",
+                    "description": "space number/identifier"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "space name (LongName)"
+                  },
+                  "level": {
+                    "type": "string",
+                    "description": "level name"
+                  },
+                  "net_floor_area_m2": {
+                    "type": "real",
+                    "unit": "m2",
+                    "description": "net floor area"
+                  },
+                  "ceiling_height_m": {
+                    "type": "real",
+                    "unit": "m",
+                    "description": "clear ceiling height"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "furniture": {
+          "type": "object",
+          "description": "Furniture.",
+          "properties": {
+            "types": {
+              "type": "map",
+              "description": "Number of furniture items per type.",
+              "key": {
+                "type": "string",
+                "description": "furniture type name"
+              },
+              "items": {
+                "type": "int",
+                "description": "number of furniture items of this type"
+              }
+            },
+            "generic_or_unnamed_count": {
+              "type": "int",
+              "description": "furniture items with generic or missing names"
+            }
+          }
+        },
+        "sanitary": {
+          "type": "object",
+          "description": "Sanitary equipment.",
+          "properties": {
+            "types": {
+              "type": "map",
+              "description": "Number of sanitary fixtures per type.",
+              "key": {
+                "type": "string",
+                "description": "sanitary fixture type name"
+              },
+              "items": {
+                "type": "int",
+                "description": "number of sanitary fixtures of this type"
+              }
+            },
+            "terminal_type_count": {
+              "type": "int",
+              "description": "number of distinct sanitary terminal types"
+            },
+            "by_category": {
+              "type": "map",
+              "description": "Sanitary equipment per category.",
+              "key": {
+                "type": "string",
+                "description": "category (toilet, basin, shower, sink, urinal, …)"
+              },
+              "items": {
+                "type": "object",
+                "description": "One category.",
+                "properties": {
+                  "type_count": {
+                    "type": "int",
+                    "description": "number of distinct types"
+                  },
+                  "unit_count": {
+                    "type": "int",
+                    "description": "number of units"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "mep": {
+          "type": "object",
+          "description": "MEP (mechanical, electrical, plumbing).",
+          "properties": {
+            "system_count": {
+              "type": "int",
+              "description": "total number of MEP systems"
+            },
+            "systems": {
+              "type": "map",
+              "description": "MEP systems per category.",
+              "key": {
+                "type": "string",
+                "description": "system category",
+                "values": [
+                  "heating",
+                  "plumbing",
+                  "ventilation",
+                  "cooling",
+                  "electrical",
+                  "lighting",
+                  "accessories",
+                  "other"
+                ]
+              },
+              "items": {
+                "type": "object",
+                "description": "One system category.",
+                "properties": {
+                  "system_count": {
+                    "type": "int",
+                    "description": "number of systems of the category"
+                  },
+                  "description": {
+                    "type": "list",
+                    "description": "Components/functions of the system.",
+                    "items": {
+                      "type": "string",
+                      "description": "item"
+                    }
+                  },
+                  "component_count": {
+                    "type": "int",
+                    "description": "number of components"
+                  },
+                  "components_by_type": {
+                    "type": "map",
+                    "description": "Components per type.",
+                    "key": {
+                      "type": "string",
+                      "description": "component type (radiators, pipe segments, air terminals, IFC class, …)"
+                    },
+                    "items": {
+                      "type": "int",
+                      "description": "number of components"
+                    }
+                  }
+                }
+              }
+            },
+            "terminals": {
+              "type": "object",
+              "description": "MEP terminals.",
+              "properties": {
+                "total": {
+                  "type": "int",
+                  "description": "total number of terminals"
+                },
+                "average_per_space": {
+                  "type": "real",
+                  "unit": "-",
+                  "description": "average number of terminals per space"
+                },
+                "by_type": {
+                  "type": "map",
+                  "description": "Terminals per type.",
+                  "key": {
+                    "type": "string",
+                    "description": "terminal type (radiators, sanitary fixtures, air diffusers, …)"
+                  },
+                  "items": {
+                    "type": "int",
+                    "description": "number of terminals"
+                  }
+                }
+              }
+            },
+            "pipe_types": {
+              "type": "list",
+              "description": "Pipe types used.",
+              "items": {
+                "type": "string",
+                "description": "pipe type"
+              }
+            },
+            "distribution_lengths": {
+              "type": "map",
+              "description": "Pipe and duct lengths per distribution type.",
+              "key": {
+                "type": "string",
+                "description": "distribution type (heating pipes, plumbing pipes, ventilation ducts, …)"
+              },
+              "items": {
+                "type": "object",
+                "description": "One distribution type.",
+                "properties": {
+                  "length_m": {
+                    "type": "real",
+                    "unit": "m",
+                    "description": "total length"
+                  },
+                  "segment_count": {
+                    "type": "int",
+                    "description": "number of segments"
+                  }
+                }
+              }
+            },
+            "total_distribution_length_m": {
+              "type": "real",
+              "unit": "m",
+              "description": "total length of pipes and ducts"
+            },
+            "total_distribution_component_count": {
+              "type": "int",
+              "description": "number of distribution components"
+            },
+            "maintenance_requirements": {
+              "type": "list",
+              "origin": "external",
+              "description": "maintenance requirements of the MEP systems",
+              "items": {
+                "type": "string",
+                "description": "requirement"
+              }
+            }
+          }
+        },
+        "electrical": {
+          "type": "object",
+          "description": "Electrical system.",
+          "properties": {
+            "components": {
+              "type": "list",
+              "description": "Electrical components present.",
+              "items": {
+                "type": "string",
+                "description": "component"
+              }
+            },
+            "loads_by_equipment": {
+              "type": "map",
+              "description": "Electrical loads per equipment type.",
+              "key": {
+                "type": "string",
+                "description": "equipment type"
+              },
+              "items": {
+                "type": "object",
+                "description": "One equipment type.",
+                "properties": {
+                  "unit_count": {
+                    "type": "int",
+                    "description": "number of units"
+                  },
+                  "unit_power_kW": {
+                    "type": "real",
+                    "unit": "kW",
+                    "description": "power per unit"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "description": "equipment kind"
+                  }
+                }
+              }
+            },
+            "loads_by_system": {
+              "type": "map",
+              "description": "Electrical loads per system.",
+              "key": {
+                "type": "string",
+                "description": "system (hot water, heat pump, pumps, ventilation fans, …)"
+              },
+              "items": {
+                "type": "object",
+                "description": "One system.",
+                "properties": {
+                  "power_kW": {
+                    "type": "real",
+                    "unit": "kW",
+                    "description": "electrical load"
+                  },
+                  "is_estimated": {
+                    "type": "bool",
+                    "description": "value is estimated"
+                  },
+                  "equipment_count": {
+                    "type": "int",
+                    "description": "number of equipment units"
+                  }
+                }
+              }
+            },
+            "total_load_kW": {
+              "type": "real",
+              "unit": "kW",
+              "description": "total electrical MEP load"
+            },
+            "voltage_levels_V": {
+              "type": "list",
+              "origin": "external",
+              "description": "voltage levels of the electrical system",
+              "items": {
+                "type": "real",
+                "unit": "V",
+                "description": "voltage"
+              }
+            },
+            "distribution_capacities_available": {
+              "type": "bool",
+              "description": "capacities of electrical distribution equipment are in the model"
+            },
+            "lighting_systems": {
+              "type": "list",
+              "description": "Lighting systems installed.",
+              "items": {
+                "type": "string",
+                "description": "lighting system"
+              }
+            }
+          }
+        },
+        "parking_lot": {
+          "type": "object",
+          "description": "Parking lot.",
+          "properties": {
+            "gross_area_m2": {
+              "type": "real",
+              "unit": "m2",
+              "description": "gross area of the parking lot"
+            },
+            "parking_space_count": {
+              "type": "int",
+              "description": "number of parking spaces"
+            },
+            "equipment": {
+              "type": "map",
+              "description": "Number of installations/equipment items in the parking lot per type.",
+              "key": {
+                "type": "string",
+                "description": "equipment type"
+              },
+              "items": {
+                "type": "int",
+                "description": "number of installations/equipment items in the parking lot of this type"
+              }
+            }
+          }
+        },
+        "fire_safety": {
+          "type": "object",
+          "description": "Fire safety.",
+          "properties": {
+            "door_fire_rating_available": {
+              "type": "bool",
+              "description": "fire rating information exists for doors"
+            },
+            "door_types_with_fire_rating": {
+              "type": "list",
+              "description": "Door types carrying fire rating.",
+              "items": {
+                "type": "string",
+                "description": "door type"
+              }
+            },
+            "window_fire_rating_available": {
+              "type": "bool",
+              "description": "fire rating information exists for windows"
+            },
+            "window_types_with_fire_rating": {
+              "type": "list",
+              "description": "Window types carrying fire rating.",
+              "items": {
+                "type": "string",
+                "description": "window type"
+              }
+            },
+            "internal_door_fire_rating": {
+              "type": "string",
+              "description": "fire rating of the internal doors"
+            },
+            "fire_exit_count": {
+              "type": "int",
+              "description": "number of exits (exterior doors) usable as fire exits"
+            },
+            "fire_exit_resistance_specified": {
+              "type": "bool",
+              "description": "fire resistance of the exits is specified"
+            },
+            "max_distance_to_nearest_exit_m": {
+              "type": "real",
+              "unit": "m",
+              "description": "distance from the furthest point to the nearest emergency exit"
+            },
+            "escape_route_min_width_mm": {
+              "type": "real",
+              "unit": "mm",
+              "description": "width of the emergency escape routes"
+            },
+            "fire_rated_walls_between_zones": {
+              "type": "list",
+              "description": "Fire-rated walls separating zones.",
+              "items": {
+                "type": "string",
+                "description": "wall description"
+              }
+            }
+          }
+        },
+        "accessibility": {
+          "type": "object",
+          "description": "Accessibility.",
+          "properties": {
+            "all_internal_doors_compliant": {
+              "type": "bool",
+              "description": "all internal doors meet accessibility requirements"
+            }
+          }
+        },
+        "envelope": {
+          "type": "object",
+          "description": "Building envelope and energy.",
+          "properties": {
+            "facade_total_area_m2": {
+              "type": "real",
+              "unit": "m2",
+              "description": "total facade surface area"
+            },
+            "exterior_wall_gross_side_area_m2": {
+              "type": "real",
+              "unit": "m2",
+              "description": "gross side area of exterior walls"
+            },
+            "curtain_wall_area_m2": {
+              "type": "real",
+              "unit": "m2",
+              "description": "area of curtain walls"
+            },
+            "thermal_bridges_identified": {
+              "type": "bool",
+              "description": "thermal bridges are identified in the model"
+            },
+            "air_tightness_n50_1_h": {
+              "type": "real",
+              "unit": "1/h",
+              "origin": "external",
+              "description": "air tightness of the envelope (air changes at 50 Pa)"
+            },
+            "energy_efficiency_rating": {
+              "type": "string",
+              "origin": "external",
+              "description": "total energy efficiency rating of the building"
+            },
+            "insulation_volume_by_component": {
+              "type": "map",
+              "description": "Insulation volume per building component.",
+              "key": {
+                "type": "string",
+                "description": "component (exterior walls, roof, …)"
+              },
+              "items": {
+                "type": "real",
+                "unit": "m3",
+                "description": "insulation volume"
+              }
+            }
+          }
+        },
+        "quantity_takeoff": {
+          "type": "object",
+          "description": "Quantity take-off.",
+          "properties": {
+            "skirting_board_length_m": {
+              "type": "real",
+              "unit": "m",
+              "description": "total length of skirting boards"
+            },
+            "interior_wall_paint_area_m2": {
+              "type": "real",
+              "unit": "m2",
+              "description": "interior wall surface area requiring painting"
+            },
+            "bathroom_floor_tiling_total_m2": {
+              "type": "real",
+              "unit": "m2",
+              "description": "tiling needed to redo the floor of all bathrooms"
+            },
+            "doorknob_count": {
+              "type": "int",
+              "description": "number of doorknobs"
+            }
+          }
+        },
+        "sustainability": {
+          "type": "object",
+          "description": "Sustainability.",
+          "properties": {
+            "embodied_carbon": {
+              "type": "object",
+              "description": "Embodied carbon of the structural elements.",
+              "properties": {
+                "total_kgCO2e": {
+                  "type": "real",
+                  "unit": "kgCO2e",
+                  "origin": "external",
+                  "description": "total embodied carbon"
+                },
+                "by_material": {
+                  "type": "map",
+                  "description": "Embodied carbon per material.",
+                  "key": {
+                    "type": "string",
+                    "description": "material"
+                  },
+                  "items": {
+                    "type": "object",
+                    "description": "One material.",
+                    "properties": {
+                      "kgCO2e": {
+                        "type": "real",
+                        "unit": "kgCO2e",
+                        "description": "embodied carbon"
+                      },
+                      "share_pct": {
+                        "type": "real",
+                        "unit": "%",
+                        "description": "share of the total"
+                      }
+                    }
+                  }
+                },
+                "methodology": {
+                  "type": "string",
+                  "description": "calculation methodology"
+                },
+                "assumptions": {
+                  "type": "list",
+                  "description": "Assumptions made in the calculation.",
+                  "items": {
+                    "type": "string",
+                    "description": "assumption"
+                  }
+                }
+              }
+            },
+            "recyclability_by_material": {
+              "type": "map",
+              "description": "End-of-life recyclability per material type.",
+              "key": {
+                "type": "string",
+                "description": "material type"
+              },
+              "items": {
+                "type": "enum",
+                "values": [
+                  "high",
+                  "medium",
+                  "low",
+                  "uncertain"
+                ],
+                "description": "recyclability class"
+              }
+            }
+          }
+        }
+      }
+    },
+    "construction_drawings": {
+      "type": "object",
+      "description": "Information read from PDF construction drawing sheets (schedules and enlarged plans).",
+      "properties": {
+        "project": {
+          "type": "object",
+          "description": "Project of the drawing set.",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "project name"
+            },
+            "address": {
+              "type": "string",
+              "description": "project address"
+            }
+          }
+        },
+        "door_schedule": {
+          "type": "object",
+          "description": "Door schedule listing individual doors by door number.",
+          "properties": {
+            "sheet": {
+              "type": "string",
+              "description": "sheet number (e.g. A-801)"
+            },
+            "door_count": {
+              "type": "int",
+              "description": "number of doors (door numbers) listed"
+            },
+            "doors": {
+              "type": "map",
+              "description": "Doors listed in the schedule.",
+              "key": {
+                "type": "string",
+                "description": "door number (e.g. 121.A)"
+              },
+              "items": {
+                "type": "object",
+                "description": "One door.",
+                "properties": {
+                  "room_number": {
+                    "type": "string",
+                    "description": "room served by the door"
+                  },
+                  "room_name": {
+                    "type": "string",
+                    "description": "name of the room"
+                  },
+                  "door_type": {
+                    "type": "string",
+                    "description": "door type mark (e.g. A1, B2)"
+                  },
+                  "width": {
+                    "type": "string",
+                    "unit": "ft-in",
+                    "description": "door width (imperial notation as written, e.g. 3'-0\")"
+                  },
+                  "height": {
+                    "type": "string",
+                    "unit": "ft-in",
+                    "description": "door height (imperial notation as written, e.g. 3'-0\")"
+                  },
+                  "door_material": {
+                    "type": "string",
+                    "description": "door material code (e.g. WD-1)"
+                  },
+                  "frame_material": {
+                    "type": "string",
+                    "description": "frame material code (e.g. STL-1, AL-1)"
+                  },
+                  "hardware_group": {
+                    "type": "string",
+                    "description": "hardware group"
+                  },
+                  "notes": {
+                    "type": "list",
+                    "description": "Note codes applied to the door.",
+                    "items": {
+                      "type": "string",
+                      "description": "note code"
+                    }
+                  },
+                  "fire_rating": {
+                    "type": "string",
+                    "description": "fire rating"
+                  }
+                }
+              }
+            },
+            "count_by_door_type": {
+              "type": "map",
+              "description": "Number of doors per type.",
+              "key": {
+                "type": "string",
+                "description": "door type mark"
+              },
+              "items": {
+                "type": "int",
+                "description": "number of doors of this type"
+              }
+            },
+            "count_by_door_material": {
+              "type": "map",
+              "description": "Number of doors per type.",
+              "key": {
+                "type": "string",
+                "description": "door material code"
+              },
+              "items": {
+                "type": "int",
+                "description": "number of doors of this type"
+              }
+            },
+            "count_by_frame_material": {
+              "type": "map",
+              "description": "Number of doors per type.",
+              "key": {
+                "type": "string",
+                "description": "frame material code"
+              },
+              "items": {
+                "type": "int",
+                "description": "number of doors of this type"
+              }
+            },
+            "count_by_note": {
+              "type": "map",
+              "description": "Number of doors per type.",
+              "key": {
+                "type": "string",
+                "description": "note code"
+              },
+              "items": {
+                "type": "int",
+                "description": "number of doors of this type"
+              }
+            },
+            "count_by_width": {
+              "type": "map",
+              "description": "Number of doors per type.",
+              "key": {
+                "type": "string",
+                "description": "width as written"
+              },
+              "items": {
+                "type": "int",
+                "description": "number of doors of this type"
+              }
+            },
+            "count_by_height": {
+              "type": "map",
+              "description": "Number of doors per type.",
+              "key": {
+                "type": "string",
+                "description": "height as written"
+              },
+              "items": {
+                "type": "int",
+                "description": "number of doors of this type"
+              }
+            },
+            "count_by_room": {
+              "type": "map",
+              "description": "Number of doors per type.",
+              "key": {
+                "type": "string",
+                "description": "room number"
+              },
+              "items": {
+                "type": "int",
+                "description": "number of doors of this type"
+              }
+            },
+            "door_type_legend": {
+              "type": "map",
+              "description": "Meaning of door type marks.",
+              "key": {
+                "type": "string",
+                "description": "door type mark"
+              },
+              "items": {
+                "type": "string",
+                "description": "description (e.g. swing door, sliding door)"
+              }
+            },
+            "material_legend": {
+              "type": "map",
+              "description": "Meaning of material codes.",
+              "key": {
+                "type": "string",
+                "description": "material code"
+              },
+              "items": {
+                "type": "string",
+                "description": "description"
+              }
+            },
+            "note_legend": {
+              "type": "map",
+              "description": "Meaning of note codes.",
+              "key": {
+                "type": "string",
+                "description": "note code"
+              },
+              "items": {
+                "type": "string",
+                "description": "description"
+              }
+            }
+          }
+        },
+        "door_type_schedule": {
+          "type": "object",
+          "description": "Door type schedule with quantities per type mark.",
+          "properties": {
+            "sheet": {
+              "type": "string",
+              "description": "sheet number (e.g. A700)"
+            },
+            "total_item_count": {
+              "type": "int",
+              "description": "total items counted in the schedule (all type marks, including gates, access panels and clear openings)"
+            },
+            "types": {
+              "type": "map",
+              "description": "Door type marks.",
+              "key": {
+                "type": "string",
+                "description": "type mark (e.g. U01)"
+              },
+              "items": {
+                "type": "object",
+                "description": "One door type.",
+                "properties": {
+                  "description": {
+                    "type": "string",
+                    "description": "type description as written (e.g. SWING …)"
+                  },
+                  "product": {
+                    "type": "string",
+                    "description": "manufacturer/product line"
+                  },
+                  "operation": {
+                    "type": "enum",
+                    "values": [
+                      "swing",
+                      "sliding",
+                      "gate",
+                      "access_panel",
+                      "clear_opening",
+                      "other"
+                    ],
+                    "description": "operation"
+                  },
+                  "width": {
+                    "type": "string",
+                    "unit": "ft-in",
+                    "description": "door width (imperial notation as written, e.g. 3'-0\")"
+                  },
+                  "height": {
+                    "type": "string",
+                    "unit": "ft-in",
+                    "description": "door height (imperial notation as written, e.g. 3'-0\")"
+                  },
+                  "fire_rating": {
+                    "type": "string",
+                    "description": "fire rating"
+                  },
+                  "frame_material": {
+                    "type": "string",
+                    "description": "frame material"
+                  },
+                  "acoustical_seal": {
+                    "type": "bool",
+                    "description": "door has an acoustical seal"
+                  },
+                  "quantity": {
+                    "type": "int",
+                    "description": "number of doors of the type"
+                  },
+                  "leaf_count": {
+                    "type": "int",
+                    "description": "number of door leaves of the type"
+                  },
+                  "quantity_by_floor": {
+                    "type": "map",
+                    "description": "Quantity per floor.",
+                    "key": {
+                      "type": "string",
+                      "description": "floor (e.g. 1st, 3rd)"
+                    },
+                    "items": {
+                      "type": "int",
+                      "description": "number of doors"
+                    }
+                  }
+                }
+              }
+            },
+            "quantity_by_product": {
+              "type": "map",
+              "description": "Quantities per product line.",
+              "key": {
+                "type": "string",
+                "description": "product line"
+              },
+              "items": {
+                "type": "object",
+                "description": "One product line.",
+                "properties": {
+                  "total": {
+                    "type": "int",
+                    "description": "total number of doors"
+                  },
+                  "by_floor": {
+                    "type": "map",
+                    "description": "Doors per floor.",
+                    "key": {
+                      "type": "string",
+                      "description": "floor"
+                    },
+                    "items": {
+                      "type": "int",
+                      "description": "number of doors"
+                    }
+                  }
+                }
+              }
+            },
+            "leaf_count_by_operation": {
+              "type": "map",
+              "description": "Door leaves per operation type.",
+              "key": {
+                "type": "string",
+                "description": "operation"
+              },
+              "items": {
+                "type": "int",
+                "description": "number of leaves"
+              }
+            }
+          }
+        },
+        "window_schedule": {
+          "type": "object",
+          "description": "Window schedule.",
+          "properties": {
+            "sheet": {
+              "type": "string",
+              "description": "sheet number"
+            },
+            "assembly_count": {
+              "type": "int",
+              "description": "total number of window assemblies listed"
+            },
+            "types": {
+              "type": "map",
+              "description": "Window type marks.",
+              "key": {
+                "type": "string",
+                "description": "type mark (e.g. SS, RR)"
+              },
+              "items": {
+                "type": "object",
+                "description": "One window type.",
+                "properties": {
+                  "description": {
+                    "type": "string",
+                    "description": "type description as written"
+                  },
+                  "units_per_assembly": {
+                    "type": "int",
+                    "description": "number of window units in the assembly (N-wide)"
+                  },
+                  "unit_model": {
+                    "type": "string",
+                    "description": "window unit model"
+                  },
+                  "tempering": {
+                    "type": "string",
+                    "description": "tempered glass position"
+                  },
+                  "quantity": {
+                    "type": "int",
+                    "description": "number of assemblies of the type"
+                  }
+                }
+              }
+            },
+            "assembly_count_by_width": {
+              "type": "map",
+              "description": "Assemblies per width.",
+              "key": {
+                "type": "string",
+                "description": "units per assembly (N)"
+              },
+              "items": {
+                "type": "int",
+                "description": "number of assemblies"
+              }
+            },
+            "total_unit_count": {
+              "type": "int",
+              "description": "total window units needed (sum of N × quantity)"
+            },
+            "unit": {
+              "type": "object",
+              "description": "Window unit.",
+              "properties": {
+                "model": {
+                  "type": "string",
+                  "description": "unit model"
+                },
+                "width": {
+                  "type": "string",
+                  "unit": "ft-in",
+                  "description": "unit width (imperial notation as written, e.g. 3'-0\")"
+                },
+                "height": {
+                  "type": "string",
+                  "unit": "ft-in",
+                  "description": "unit height (imperial notation as written, e.g. 3'-0\")"
+                }
+              }
+            }
+          }
+        },
+        "finish_room_schedule": {
+          "type": "object",
+          "description": "Finish room schedule.",
+          "properties": {
+            "sheet": {
+              "type": "string",
+              "description": "sheet number"
+            },
+            "room_count": {
+              "type": "int",
+              "description": "number of rooms listed"
+            },
+            "rooms": {
+              "type": "map",
+              "description": "Rooms listed in the schedule.",
+              "key": {
+                "type": "string",
+                "description": "room number"
+              },
+              "items": {
+                "type": "object",
+                "description": "One room.",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "room name"
+                  },
+                  "area_ft2": {
+                    "type": "real",
+                    "unit": "ft2",
+                    "description": "room area"
+                  },
+                  "floor_finishes": {
+                    "type": "list",
+                    "description": "Floor finish codes.",
+                    "items": {
+                      "type": "string",
+                      "description": "finish code"
+                    }
+                  },
+                  "base_finish": {
+                    "type": "string",
+                    "description": "base finish code"
+                  },
+                  "wall_finishes": {
+                    "type": "object",
+                    "description": "Wall finish codes per wall.",
+                    "properties": {
+                      "north": {
+                        "type": "string",
+                        "description": "north wall finish code"
+                      },
+                      "east": {
+                        "type": "string",
+                        "description": "east wall finish code"
+                      },
+                      "south": {
+                        "type": "string",
+                        "description": "south wall finish code"
+                      },
+                      "west": {
+                        "type": "string",
+                        "description": "west wall finish code"
+                      }
+                    }
+                  },
+                  "ceiling_finish": {
+                    "type": "string",
+                    "description": "ceiling finish code"
+                  }
+                }
+              }
+            },
+            "total_area_ft2": {
+              "type": "real",
+              "unit": "ft2",
+              "description": "total area of all rooms with an area listed"
+            },
+            "area_by_room_name": {
+              "type": "map",
+              "description": "Areas per room name.",
+              "key": {
+                "type": "string",
+                "description": "room name (e.g. OFFICE, RESTROOM)"
+              },
+              "items": {
+                "type": "object",
+                "description": "One room name.",
+                "properties": {
+                  "room_count": {
+                    "type": "int",
+                    "description": "number of rooms"
+                  },
+                  "total_area_ft2": {
+                    "type": "real",
+                    "unit": "ft2",
+                    "description": "total area"
+                  }
+                }
+              }
+            },
+            "by_floor_finish": {
+              "type": "map",
+              "description": "Rooms per floor finish.",
+              "key": {
+                "type": "string",
+                "description": "floor finish code"
+              },
+              "items": {
+                "type": "object",
+                "description": "One finish.",
+                "properties": {
+                  "room_count": {
+                    "type": "int",
+                    "description": "number of rooms"
+                  },
+                  "total_area_ft2": {
+                    "type": "real",
+                    "unit": "ft2",
+                    "description": "total area"
+                  }
+                }
+              }
+            },
+            "room_count_by_base_finish": {
+              "type": "map",
+              "description": "Number of rooms per type.",
+              "key": {
+                "type": "string",
+                "description": "base finish code"
+              },
+              "items": {
+                "type": "int",
+                "description": "number of rooms of this type"
+              }
+            },
+            "room_count_all_walls_same_finish": {
+              "type": "map",
+              "description": "Number of rooms whose four walls all have the finish per type.",
+              "key": {
+                "type": "string",
+                "description": "wall finish code"
+              },
+              "items": {
+                "type": "int",
+                "description": "number of rooms whose four walls all have the finish of this type"
+              }
+            },
+            "largest_room": {
+              "type": "object",
+              "description": "Room with the largest area.",
+              "properties": {
+                "number": {
+                  "type": "string",
+                  "description": "room number"
+                },
+                "name": {
+                  "type": "string",
+                  "description": "room name"
+                },
+                "area_ft2": {
+                  "type": "real",
+                  "unit": "ft2",
+                  "description": "area"
+                }
+              }
+            },
+            "finish_legend": {
+              "type": "map",
+              "description": "Meaning of finish codes.",
+              "key": {
+                "type": "string",
+                "description": "finish code (F…, B…, W…, C…)"
+              },
+              "items": {
+                "type": "string",
+                "description": "description"
+              }
+            }
+          }
+        },
+        "enlarged_plans": {
+          "type": "map",
+          "description": "Enlarged plans (e.g. restrooms).",
+          "key": {
+            "type": "string",
+            "description": "plan identifier (e.g. 6A)"
+          },
+          "items": {
+            "type": "object",
+            "description": "One enlarged plan.",
+            "properties": {
+              "sheet": {
+                "type": "string",
+                "description": "sheet number"
+              },
+              "title": {
+                "type": "string",
+                "description": "plan title"
+              },
+              "water_closet_count": {
+                "type": "int",
+                "description": "number of water closets drawn"
+              },
+              "lavatory_count": {
+                "type": "int",
+                "description": "number of lavatories drawn"
+              },
+              "shower_count": {
+                "type": "int",
+                "description": "number of showers drawn"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+# Local test of the whole app (web + PlanQA pipeline) in one container.
+#
+#   1. Keys into .env (same folder, ignored by git):
+#        GEMINI_API_KEY="..."
+#        ELEVENLABS_API_KEY="..."        # optional (voice)
+#   2. Layout weights: pipeline/models/model_best_val_loss_var.pkl
+#   3. docker compose up -d --build      -> http://localhost:3000
+#      docker compose logs -f            (pipeline + web server output)
+#      docker compose down
+#
+# Docker Compose reads .env automatically for the ${...} values below (quotes are removed).
+# Do not write the keys into this file: it is meant to be committed.
+
+services:
+  stoa:
+    build: .
+    image: stoa:local
+    container_name: stoa
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      GEMINI_API_KEY: ""
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      ELEVENLABS_VOICE_ID: ${ELEVENLABS_VOICE_ID:-}
+      # model of the benchmark runs (out/predictions.jsonl, out/agent_predictions.jsonl)
+      GEMINI_MODEL: gemini-flash-latest
+      # agent may look at crops of the drawing; OCR texts, symbols and rooms below 0.65 confidence are dropped
+      PLANQA_ARGS: "--vision --min-conf-text 0.65 --min-conf-symbols 0.65 --min-conf-rooms 0.65"
+    restart: unless-stopped

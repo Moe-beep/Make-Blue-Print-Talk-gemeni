@@ -1,0 +1,30 @@
+# built
+models/ops/build/
+models/ops/dist/
+*.egg-info/
+
+# pycache
+__pycache__
+.pyc
+
+# data
+data/
+data2/
+*.html
+
+# test script
+slurm_scripts*
+
+# outputs
+output
+output*
+wandb
+wandb_keys
+watch_folder
+cross_eval_out
+*.json
+*.png
+*.csv
+*.log
+*.svg
+*.zip

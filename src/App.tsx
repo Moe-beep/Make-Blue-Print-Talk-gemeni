@@ -34,6 +34,22 @@ import {
 } from 'lucide-react';
 import { Viewport2D, type Viewport2DHandle } from './components/Viewport2D';
 import { Viewport3D, type Viewport3DHandle } from './components/Viewport3D';
+import { ExplanationCard } from './components/ExplanationCard';
+import {
+  ExplanationView,
+  type ExplainTab,
+  type ExplainVisual,
+} from './components/ExplanationView';
+import { PlanqaPanel } from './components/PlanqaPanel';
+import type { PlanqaEntryState } from './types/explanation';
+import {
+  planqaAsk,
+  planqaInfo,
+  planqaSupported,
+  planqaUpload,
+  planqaWaitReady,
+  PlanqaError,
+} from './utils/planqa';
 import type {
   ChatMessage,
   DetectedObject,
@@ -494,7 +510,7 @@ export default function App() {
   const [analyzing, setAnalyzing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<InspectorTab>('takeoff');
+  const [activeTab, setActiveTab] = useState<InspectorTab>('assistant');
   const [objectFilter, setObjectFilter] = useState<ObjectCategoryFilter>('All');
   const [objectSearch, setObjectSearch] = useState('');
   const [areaUnit, setAreaUnit] = useState<'m2' | 'ft2'>('m2');
@@ -507,6 +523,14 @@ export default function App() {
   const [locatingHighlightId, setLocatingHighlightId] = useState<string | null>(
     null,
   );
+
+  // PlanQA explanation view (right panel) and what it shows on the plan / 3D model
+  const [explainView, setExplainView] = useState<{
+    msgId: string | null;
+    tab: ExplainTab;
+  } | null>(null);
+  const [explainVisual, setExplainVisual] = useState<ExplainVisual | null>(null);
+  const planqaSubmittedRef = useRef<Set<string>>(new Set());
 
   // Chat Q&A + Voice I/O state (English only, ElevenLabs API)
   const [chatInput, setChatInput] = useState('');
@@ -597,9 +621,103 @@ export default function App() {
     [],
   );
 
+  // ---------------------------------------------------------------- PlanQA pipeline (Python service)
+  const planqaKeyOf = (entry: ProjectFileEntry) => {
+    const p = Number(entry.parsedSummary?.page);
+    const page =
+      entry.asset.fileKind === '2d-pdf' && Number.isFinite(p) && p >= 1 ? p - 1 : 0;
+    return { key: `${entry.asset.id}::${page}`, page };
+  };
+
+  const setPlanqa = useCallback(
+    (fileId: string, key: string, patch: Partial<PlanqaEntryState>) => {
+      updateEntry(fileId, (prev) =>
+        prev.planqa && prev.planqa.key !== key && patch.status !== 'uploading'
+          ? prev // a newer submission (other PDF page) replaced this one
+          : { ...prev, planqa: { ...(prev.planqa ?? { key, status: 'uploading' }), ...patch, key } },
+      );
+    },
+    [updateEntry],
+  );
+
+  const submitToPlanqa = useCallback(
+    async (fileId: string, key: string, page: number) => {
+      const entry = projectFilesRef.current.find((f) => f.asset.id === fileId);
+      if (!entry) return;
+      setPlanqa(fileId, key, { status: 'uploading', docId: undefined, error: undefined, info: undefined });
+      try {
+        const info = await planqaUpload(entry.asset, page);
+        setPlanqa(fileId, key, {
+          docId: info.id,
+          status: info.status,
+          stage: info.stage,
+          error: info.error ?? undefined,
+          info: info.status === 'ready' ? info : undefined,
+          seconds: info.seconds,
+        });
+      } catch (err) {
+        const offline = err instanceof PlanqaError && err.offline;
+        setPlanqa(fileId, key, {
+          status: offline ? 'offline' : 'error',
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    },
+    [setPlanqa],
+  );
+
+  // submit every readable file once (PDF: again when the page changes)
+  useEffect(() => {
+    for (const entry of projectFiles) {
+      if (!planqaSupported(entry.asset)) continue;
+      const { key, page } = planqaKeyOf(entry);
+      if (entry.planqa?.key === key || planqaSubmittedRef.current.has(key)) continue;
+      planqaSubmittedRef.current.add(key);
+      void submitToPlanqa(entry.asset.id, key, page);
+    }
+  }, [projectFiles, submitToPlanqa]);
+
+  // poll documents that are still being processed
+  useEffect(() => {
+    const pending = projectFiles.filter(
+      (f) => f.planqa?.docId && (f.planqa.status === 'queued' || f.planqa.status === 'processing'),
+    );
+    if (pending.length === 0) return;
+    const timer = window.setTimeout(async () => {
+      for (const f of pending) {
+        const pq = f.planqa!;
+        try {
+          const info = await planqaInfo(pq.docId!);
+          setPlanqa(f.asset.id, pq.key, {
+            status: info.status,
+            stage: info.stage,
+            error: info.error ?? undefined,
+            seconds: info.seconds,
+            info: info.status === 'ready' ? info : undefined,
+          });
+        } catch (err) {
+          setPlanqa(f.asset.id, pq.key, {
+            status: err instanceof PlanqaError && err.offline ? 'offline' : 'error',
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [projectFiles, setPlanqa]);
+
+  const retryPlanqa = (fileId: string) => {
+    const entry = projectFilesRef.current.find((f) => f.asset.id === fileId);
+    if (!entry) return;
+    const { key, page } = planqaKeyOf(entry);
+    planqaSubmittedRef.current.add(key);
+    void submitToPlanqa(fileId, key, page);
+  };
+
   const selectProjectFile = (fileId: string) => {
     setActiveFileId(fileId);
     setActiveHighlight(null);
+    setExplainView(null);
     setErrorMsg(null);
   };
 
@@ -855,7 +973,14 @@ export default function App() {
     setActiveFileId(null);
     setActiveHighlight(null);
     setErrorMsg(null);
+    setExplainView(null);
   };
+
+  // 3D: the explanation view highlights meshes via exact '#<STEP id>' ids
+  useEffect(() => {
+    if (explainVisual?.highlight3D) setActiveHighlight(explainVisual.highlight3D);
+    else setActiveHighlight((h) => (h?.id.startsWith('expl-') ? null : h));
+  }, [explainVisual]);
 
   const handleToggleHighlight = async (
     target: HighlightTarget,
@@ -1469,7 +1594,60 @@ export default function App() {
     }));
     setAsking(true);
 
+    const stamp = () =>
+      new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
     try {
+      // 1) PlanQA pipeline: answer with evidence, steps and uncertainty (explanation/1)
+      let fallbackNote: string | undefined;
+      const pq = projectFilesRef.current.find((f) => f.asset.id === currentId)?.planqa;
+      if (pq?.docId && pq.status !== 'error' && pq.status !== 'offline') {
+        try {
+          let ready = pq.status === 'ready';
+          if (!ready) {
+            const info = await planqaWaitReady(pq.docId, (i) =>
+              setPlanqa(currentId, pq.key, {
+                status: i.status,
+                stage: i.stage,
+                error: i.error ?? undefined,
+                seconds: i.seconds,
+                info: i.status === 'ready' ? i : undefined,
+              }),
+            );
+            ready = info.status === 'ready';
+            if (!ready) fallbackNote = `Pipeline error (${info.error}) - direct Gemini answer without verifiable evidence.`;
+          }
+          if (ready) {
+            const bundle = await planqaAsk(pq.docId, q);
+            updateEntry(currentId, (prev) => ({
+              ...prev,
+              chatMessages: [
+                ...prev.chatMessages,
+                {
+                  id: `a-${Date.now()}`,
+                  role: 'assistant',
+                  content: bundle.answer.text,
+                  explanation: bundle,
+                  via: 'planqa',
+                  timestamp: stamp(),
+                },
+              ],
+            }));
+            return;
+          }
+        } catch (err) {
+          fallbackNote = `Pipeline unavailable (${
+            err instanceof Error ? err.message : String(err)
+          }) - direct Gemini answer without verifiable evidence.`;
+        }
+      } else if (pq) {
+        fallbackNote =
+          pq.status === 'uploading'
+            ? 'The file is still being sent to the pipeline - this answer comes directly from Gemini, without verifiable evidence.'
+            : 'Pipeline unavailable - direct Gemini answer without verifiable evidence.';
+      }
+
+      // 2) fallback: direct Gemini answer (previous behaviour)
       const payload = await buildAnalyzePayload(
         activeEntry.asset,
         activeEntry.parsedSummary,
@@ -1560,6 +1738,8 @@ export default function App() {
             role: 'assistant',
             content: formattedAnswer,
             highlights: effectiveHighlights,
+            via: fallbackNote ? 'gemini-fallback' : 'gemini',
+            note: fallbackNote,
             timestamp: new Date().toLocaleTimeString([], {
               hour: '2-digit',
               minute: '2-digit',
@@ -2024,6 +2204,7 @@ export default function App() {
                   locatingHighlightId === activeHighlight?.id
                 }
                 onClearHighlight={() => setActiveHighlight(null)}
+                explanationOverlay={explainVisual?.overlay ?? null}
                 onParsedSummary={(s) =>
                   updateEntry(asset.id, (prev) => ({ ...prev, parsedSummary: s }))
                 }
@@ -2050,18 +2231,6 @@ export default function App() {
               <div className="flex items-center gap-1 p-1 bg-[#EAE7DF] rounded-lg">
                 <button
                   type="button"
-                  onClick={() => setActiveTab('takeoff')}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                    activeTab === 'takeoff'
-                      ? 'bg-white text-[#161614] shadow-sm'
-                      : 'text-[#5C5A54] hover:text-[#161614]'
-                  }`}
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5" />
-                  Takeoff
-                </button>
-                <button
-                  type="button"
                   onClick={() => setActiveTab('assistant')}
                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                     activeTab === 'assistant'
@@ -2071,6 +2240,18 @@ export default function App() {
                 >
                   <MessageSquare className="w-3.5 h-3.5" />
                   Assistant
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('takeoff')}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    activeTab === 'takeoff'
+                      ? 'bg-white text-[#161614] shadow-sm'
+                      : 'text-[#5C5A54] hover:text-[#161614]'
+                  }`}
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  Takeoff
                 </button>
               </div>
 
@@ -2690,9 +2871,37 @@ export default function App() {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -4 }}
                     transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-                    className="flex flex-col h-full min-h-[480px]"
+                    className="relative flex flex-col h-full min-h-[480px]"
                   >
+                    {explainView && asset && activeEntry && (() => {
+                      const msg = explainView.msgId
+                        ? chatMessages.find((m) => m.id === explainView.msgId)
+                        : undefined;
+                      return (
+                        <div className="absolute inset-0 z-20">
+                          <ExplanationView
+                            key={`${explainView.msgId ?? 'doc'}-${explainView.tab}`}
+                            bundle={msg?.explanation ?? null}
+                            doc={activeEntry.planqa?.info}
+                            previewUrl={asset.fileKind === '2d-image' ? asset.previewUrl : undefined}
+                            initialTab={explainView.tab}
+                            onClose={() => setExplainView(null)}
+                            onVisual={setExplainVisual}
+                          />
+                        </div>
+                      );
+                    })()}
                     <div className="flex-1 p-5 space-y-4 overflow-y-auto">
+                      {asset && activeEntry && (
+                        <PlanqaPanel
+                          state={activeEntry.planqa}
+                          supported={planqaSupported(asset)}
+                          onOpenUncertainty={() =>
+                            setExplainView({ msgId: null, tab: 'unsicherheit' })
+                          }
+                          onRetry={() => retryPlanqa(asset.id)}
+                        />
+                      )}
                       {!asset ? (
                         <p className="text-xs text-[#5C5A54] text-center py-12">
                           Add or select a file from the Project Binder to ask
@@ -2762,7 +2971,21 @@ export default function App() {
                                     : 'bg-[#FAF9F5] text-[#161614] border border-[#E5E2DC]'
                                 }`}
                               >
-                                {displayContent}
+                                {msg.explanation ? (
+                                  <ExplanationCard
+                                    bundle={msg.explanation}
+                                    onOpen={() =>
+                                      setExplainView({ msgId: msg.id, tab: 'belege' })
+                                    }
+                                  />
+                                ) : (
+                                  displayContent
+                                )}
+                                {msg.note && (
+                                  <div className="mt-2 pt-1.5 border-t border-[#E5E2DC] text-[10.5px] leading-snug text-[#9A4E15] whitespace-normal">
+                                    {msg.note}
+                                  </div>
+                                )}
 
                                 {/* Small Highlight Buttons for every mentioned object/room */}
                                 {msg.role === 'assistant' &&

@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
+import type { ExplainOverlay } from '../types/explanation';
 import type {
   HighlightTarget,
   LoadedAsset,
@@ -55,6 +56,8 @@ interface Viewport2DProps {
   onParsedSummary: (summary: Record<string, unknown>) => void;
   onCalibrationChange?: (note: string | null) => void;
   onImageReady?: () => void;
+  /** PlanQA explanation layer: uncertainty heat map + coloured, numbered evidence boxes. */
+  explanationOverlay?: ExplainOverlay | null;
 }
 
 interface NormalizedOverlayBox {
@@ -940,6 +943,7 @@ export const Viewport2D = forwardRef<Viewport2DHandle, Viewport2DProps>(
       onParsedSummary,
       onCalibrationChange,
       onImageReady,
+      explanationOverlay,
     },
     ref,
   ) {
@@ -1903,6 +1907,54 @@ export const Viewport2D = forwardRef<Viewport2DHandle, Viewport2DProps>(
                     })}
                 </g>
               </svg>
+            )}
+
+            {/* PlanQA explanation layer: heat map of model uncertainty + evidence boxes (role colour, counting order) */}
+            {explanationOverlay?.heatmapUrl && (
+              <img
+                src={explanationOverlay.heatmapUrl}
+                alt=""
+                draggable={false}
+                className="absolute inset-0 w-full h-full pointer-events-none"
+                style={{ opacity: explanationOverlay.heatmapOpacity ?? 0.75 }}
+              />
+            )}
+            {explanationOverlay?.marks && explanationOverlay.marks.length > 0 && (
+              <div className="absolute inset-0 pointer-events-none">
+                {explanationOverlay.marks.map((m, i) => (
+                  <div
+                    key={`expl-${i}`}
+                    title={m.label}
+                    className="absolute rounded-[2px]"
+                    style={{
+                      left: `${m.xmin / 10}%`,
+                      top: `${m.ymin / 10}%`,
+                      width: `${Math.max(0.4, (m.xmax - m.xmin) / 10)}%`,
+                      height: `${Math.max(0.4, (m.ymax - m.ymin) / 10)}%`,
+                      border: `${Math.max(1, (m.thick ? 3.5 : 2) / zoom)}px ${m.dashed ? 'dashed' : 'solid'} ${m.color}`,
+                      background: `${m.color}${Math.round(Math.min(1, Math.max(0, m.fillOpacity ?? 0.12)) * 255)
+                        .toString(16)
+                        .padStart(2, '0')}`,
+                      boxShadow: m.thick ? `0 0 0 ${2 / zoom}px #fff` : undefined,
+                    }}
+                  >
+                    {m.order !== undefined && (
+                      <span
+                        className="absolute -top-2 -left-2 rounded-full text-white font-bold flex items-center justify-center shadow-sm"
+                        style={{
+                          background: m.color,
+                          minWidth: `${16 / zoom}px`,
+                          height: `${16 / zoom}px`,
+                          fontSize: `${9.5 / zoom}px`,
+                          padding: `0 ${3 / zoom}px`,
+                        }}
+                      >
+                        {m.order}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
 
             {/* DXF Direct Vector Color Highlighting (exact room polygon wash + crisp CAD line/arc/circle recoloring, zero borders or numbers) */}

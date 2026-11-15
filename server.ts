@@ -1710,8 +1710,48 @@ function getAiClient(apiVersion?: string): GoogleGenAI {
   });
 }
 
+// PlanQA (Python pipeline, Junction/serve.py): /api/planqa/* is streamed through unchanged, before the JSON body
+// parser, so large IFC uploads are not limited by express.json and answers can take as long as the agent needs.
+const PLANQA_URL = (process.env.PLANQA_URL || 'http://127.0.0.1:8765').replace(/\/+$/, '');
+
+function proxyPlanqa(req: Request, res: Response) {
+  const target = new URL(PLANQA_URL + req.originalUrl.replace(/^\/api\/planqa/, ''));
+  const upstream = http.request(
+    target,
+    {
+      method: req.method,
+      headers: {
+        'content-type': req.headers['content-type'] || 'application/json',
+        ...(req.headers['content-length']
+          ? { 'content-length': req.headers['content-length'] }
+          : {}),
+      },
+    },
+    (up) => {
+      res.status(up.statusCode || 502);
+      for (const h of ['content-type', 'content-length', 'cache-control']) {
+        const v = up.headers[h];
+        if (v) res.setHeader(h, v);
+      }
+      up.pipe(res);
+    },
+  );
+  upstream.on('error', (err) => {
+    if (res.headersSent) {
+      res.end();
+      return;
+    }
+    res.status(503).json({
+      error: `PlanQA service unreachable at ${PLANQA_URL} (start it with "npm run pipeline" or use docker compose): ${err.message}`,
+      offline: true,
+    });
+  });
+  req.pipe(upstream);
+}
+
 async function startServer() {
   const app = express();
+  app.use('/api/planqa', proxyPlanqa);
   app.use(express.json({ limit: '50mb' }));
 
   app.get('/api/dataset/overview', (_req: Request, res: Response) => {

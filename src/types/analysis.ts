@@ -1,3 +1,5 @@
+import type { PlanqaAnswerBundle, PlanqaEntryState } from './explanation';
+
 export type FileKind =
   | '2d-image'
   | '2d-svg'
@@ -135,6 +137,11 @@ export interface ChatMessage {
   content: string;
   timestamp: string;
   highlights?: HighlightTarget[];
+  /** Answer of the PlanQA pipeline incl. its explanation (evidence, steps, uncertainty). */
+  explanation?: PlanqaAnswerBundle;
+  /** planqa = pipeline answer; gemini-fallback = direct Gemini answer although the pipeline could not be used. */
+  via?: 'planqa' | 'gemini' | 'gemini-fallback';
+  note?: string;
 }
 
 export interface ParsedIfcSpace {
@@ -310,4 +317,6 @@ export interface ProjectFileEntry {
   calibrationNote: string | null;
   spatialIndex2D?: Indexed2DElement[];
   addedAt: string;
+  /** PlanQA pipeline (Python service) state of this file. */
+  planqa?: PlanqaEntryState;
 }
